@@ -26,7 +26,7 @@ const validate = Ajv.compile(FrontMatterYaml);
 const randomIds: string[] = [];
 
 program.argument('<input-dir>').argument('<out-dir>').action(async (inDir, outDir) => {
-  await fs.rm(outDir, { recursive: true })
+  await fs.rm(outDir, { recursive: true });
   await fs.mkdir(outDir);
 
   const inDirFiles = await glob(path.join(inDir, '**/*.md'));

@@ -38,3 +38,8 @@ export type ContentType = {
   metadata: FrontMatterMetadataType,
   content: string
 }
+
+/**
+ * The type of generated posts.json output.
+ */
+export type PostsListType = Omit<ContentType, 'content'>[];
