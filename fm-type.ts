@@ -32,6 +32,9 @@ export type FrontMatterYamlType = Static<typeof FrontMatterYaml>;
 const FrontMatterMetadata = Type.Omit(Type.Intersect([FrontMatterYaml, FrontMatterGenerated]), ['noPublish']);
 type FrontMatterMetadataType = Static<typeof FrontMatterMetadata>;
 
+/**
+ * The type of each processed markdown json.
+ */
 export type ContentType = {
   id: string,
   name: string,

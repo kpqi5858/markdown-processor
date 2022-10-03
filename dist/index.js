@@ -9,13 +9,10 @@ import { promisify } from 'util';
 import { nanoid } from 'nanoid';
 import { remark } from 'remark';
 import strip from 'strip-markdown';
-import { unified } from 'unified';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
-import remarkParse from 'remark-parse';
 import { SKIP, visit } from 'unist-util-visit';
-import remarkStringify from 'remark-stringify';
 import rehypePresetMinify from 'rehype-preset-minify';
 import rehypeSlug from 'rehype-slug';
 const glob = promisify(_glob);
@@ -56,11 +53,8 @@ program.parse();
  */
 async function processMd(filePath) {
     const fileContent = await fs.readFile(filePath);
-    // Typescript is broken..
     let fmYaml;
-    const processed = await unified()
-        .use(remarkParse)
-        .use(remarkStringify)
+    const processed = await remark()
         .use(remarkFrontmatter, ['yaml'])
         .use(() => (tree, vfile, next) => {
         visit(tree, 'yaml', (node, index, parent) => {
