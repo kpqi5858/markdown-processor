@@ -22,15 +22,14 @@ const FrontMatterOptional = Type.Partial(Type.Object({
    category: Type.Array(Type.String())
 }));
 
-const FrontMatterGenerated = Type.Object({
-  description: Type.String()
-});
+type GeneratedMetadataType = {
+  description: string
+};
 
 export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional], { additionalProperties: false });
 export type FrontMatterYamlType = Static<typeof FrontMatterYaml>;
 
-const FrontMatterMetadata = Type.Omit(Type.Intersect([FrontMatterYaml, FrontMatterGenerated]), ['noPublish']);
-type FrontMatterMetadataType = Static<typeof FrontMatterMetadata>;
+type FrontMatterMetadataType = Omit<FrontMatterYamlType & GeneratedMetadataType, 'noPublish'>
 
 /**
  * The type of each processed markdown json.
