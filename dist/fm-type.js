@@ -21,6 +21,7 @@ const FrontMatterOptional = Type.Partial(Type.Object({
 const FrontMatterOptionalStripped = Type.Partial(Type.Object({
     /**
      * If not set, its file name(without extension) will be used. Duplicate name is not allowed.
+     * TODO: Maybe set proper regex (url-safe?)
      */
     name: Type.String(),
     /**
