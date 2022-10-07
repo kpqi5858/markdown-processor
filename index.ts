@@ -1,12 +1,12 @@
 import { parse } from 'yaml';
 import fs from 'fs/promises';
+import util from 'util';
 import { program } from 'commander';
 import { ContentType, FrontMatterYaml, FrontMatterYamlType } from './fm-type.js';
 import _Ajv from 'ajv';
 import _glob from 'glob';
 import path from 'path';
 import { promisify } from 'util';
-import { nanoid } from 'nanoid';
 import { remark } from 'remark';
 import strip from 'strip-markdown';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -15,22 +15,52 @@ import rehypeStringify from 'rehype-stringify';
 import { SKIP, visit } from 'unist-util-visit';
 import rehypePresetMinify from 'rehype-preset-minify';
 import rehypeSlug from 'rehype-slug';
+import chalk from 'chalk';
 
 const glob = promisify(_glob);
 const Ajv = new _Ajv();
 const validate = Ajv.compile(FrontMatterYaml);
 
-const randomIds: string[] = [];
+program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
+program.parse();
 
-program.argument('<input-dir>').argument('<out-dir>').action(async (inDir, outDir) => {
+async function markdownProcessor(inDir: string, outDir: string) {
   await fs.rm(outDir, { recursive: true });
   await fs.mkdir(outDir);
 
   const inDirFiles = await glob(path.join(inDir, '**/*.md'));
-  randomIds.push(...getRandomIds(inDirFiles.length));
+  const result: ContentType[] = [];
+  const duplicateCheck = new Map<string, string[]>();
 
-  // I "filter" null objects..
-  const result = (await Promise.all(inDirFiles.map(processMd))).filter((val) => val != null) as ContentType[];
+  let errored = false;
+
+  for (const mdFile of inDirFiles) {
+    const processed = await processMd(mdFile).catch((err) => {
+      console.error(chalk.red.bold('An error has found on'), chalk.bold(mdFile));
+      console.error(chalk.red(err));
+      errored = true;
+    });
+    if (processed == null) continue;
+
+    const check = duplicateCheck.get(processed.name);
+    if (typeof check === 'undefined') {
+      duplicateCheck.set(processed.name, [mdFile]);
+    } else {
+      check.push(mdFile);
+    }
+
+    result.push(processed);
+  }
+
+  duplicateCheck.forEach((value, key) => {
+    if (value.length !== 1) {
+      console.error(chalk.red.bold('Duplicate name found:'), chalk.bold(key));
+      value.forEach((file) => console.error(chalk.red(file)));
+      errored = true;
+    }
+  });
+
+  if (errored) process.exit(1);
 
   result.sort((a, b) => {
     const dateA = new Date(a.metadata.writtenDate);
@@ -40,19 +70,16 @@ program.argument('<input-dir>').argument('<out-dir>').action(async (inDir, outDi
     return 0;
   });
 
-  console.log(`Processed ${result.length} markdowns`);
+  console.log(chalk.cyan(`Processed ${result.length} markdowns`));
 
   await Promise.all(result.map(async (val) => {
-    await fs.writeFile(path.join(outDir, val.id + '.json'), JSON.stringify(val));
+    await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
   }));
   await fs.writeFile(path.join(outDir, 'posts.json'), JSON.stringify(result.map((val) => {
     const {content: _, ...omitted} = val;
     return omitted;
   })));
-});
-
-program.parse();
-
+}
 
 /**
  * Hopefully better implementation than before..
@@ -74,11 +101,7 @@ async function processMd(filePath: string): Promise<ContentType | null> {
 
       fmYaml = parse(node.value);
       const valid = validate(fmYaml);
-      if (!valid) {
-        console.error(`${filePath} front-matter validation failed.`);
-        console.error(validate.errors);
-        throw new Error('Validation failure');
-      }
+      if (!valid) throw new Error(`Front-matter validation failure\n${util.format(validate.errors)}`);
 
       // Remove this node https://unifiedjs.com/learn/recipe/remove-node/
       parent.children.splice(index, 1);
@@ -100,19 +123,16 @@ async function processMd(filePath: string): Promise<ContentType | null> {
   .process(String(processed));
 
   fmYaml.writtenDate = new Date(fmYaml.writtenDate).toISOString();
+  fmYaml.name ??= getName(filePath);
 
-  const randomId = randomIds.pop();
-  if (typeof randomId === 'undefined') throw new Error('wtf not enough available randomIds');
-
-  const { noPublish: _, ...omittedFm } = fmYaml;
+  const { noPublish: _, name, ...omittedFm } = fmYaml;
 
   const stripped = String(await remark().use(strip).process(processed)).replace(/\n+/g, ' ');
   const description = omittedFm.description ?? `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
 
   return {
-    id: randomId,
     content: String(html),
-    name: path.parse(filePath).name,
+    name,
     metadata: {
       description,
       ...omittedFm
@@ -120,15 +140,6 @@ async function processMd(filePath: string): Promise<ContentType | null> {
   };
 }
 
-function getRandomId() {
-  // Maybe I could try implementing this my own
-  return nanoid(8);
-}
-
-function getRandomIds(count: number): string[] {
-  const set = new Set<string>();
-  while (set.size < count) {
-    set.add(getRandomId());
-  }
-  return Array.from(set);
+function getName(filePath: string) {
+  return path.parse(filePath).name;
 }

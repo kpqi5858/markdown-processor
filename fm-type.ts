@@ -12,30 +12,39 @@ const FrontMatterRequired = Type.Object({
 
 const FrontMatterOptional = Type.Partial(Type.Object({
   /**
-   * If set to true, it will not be included in processed.
+  * If not set, it will grab from first sections of markdown content.
+  */
+  description: Type.String(),
+  category: Type.Array(Type.String())
+}));
+
+/**
+ * These metadatas will be stripped after processed.
+ */
+const FrontMatterOptionalStripped = Type.Partial(Type.Object({
+  /**
+   * If not set, its file name(without extension) will be used. Duplicate name is not allowed.
    */
-   noPublish: Type.Boolean(),
+   name: Type.String(),
    /**
-    * If not set, it will grab from first sections of markdown content.
+    * If set to true, it will not be included in processed.
     */
-   description: Type.String(),
-   category: Type.Array(Type.String())
+   noPublish: Type.Boolean()
 }));
 
 type GeneratedMetadataType = {
   description: string
 };
 
-export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional], { additionalProperties: false });
+export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional, FrontMatterOptionalStripped], { additionalProperties: false });
 export type FrontMatterYamlType = Static<typeof FrontMatterYaml>;
 
-type FrontMatterMetadataType = Omit<FrontMatterYamlType & GeneratedMetadataType, 'noPublish'>
+type FrontMatterMetadataType = Omit<FrontMatterYamlType & GeneratedMetadataType, keyof Static<typeof FrontMatterOptionalStripped>>;
 
 /**
  * The type of each processed markdown json.
  */
 export type ContentType = {
-  id: string,
   name: string,
   metadata: FrontMatterMetadataType,
   content: string

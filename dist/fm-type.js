@@ -10,17 +10,22 @@ const FrontMatterRequired = Type.Object({
 });
 const FrontMatterOptional = Type.Partial(Type.Object({
     /**
-     * If set to true, it will not be included in processed.
-     */
-    noPublish: Type.Boolean(),
-    /**
-     * If not set, it will grab from first sections of markdown content.
-     */
+    * If not set, it will grab from first sections of markdown content.
+    */
     description: Type.String(),
     category: Type.Array(Type.String())
 }));
-const FrontMatterGenerated = Type.Object({
-    description: Type.String()
-});
-export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional], { additionalProperties: false });
-const FrontMatterMetadata = Type.Omit(Type.Intersect([FrontMatterYaml, FrontMatterGenerated]), ['noPublish']);
+/**
+ * These metadatas will be stripped after processed.
+ */
+const FrontMatterOptionalStripped = Type.Partial(Type.Object({
+    /**
+     * If not set, its file name(without extension) will be used. Duplicate name is not allowed.
+     */
+    name: Type.String(),
+    /**
+     * If set to true, it will not be included in processed.
+     */
+    noPublish: Type.Boolean()
+}));
+export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional, FrontMatterOptionalStripped], { additionalProperties: false });
