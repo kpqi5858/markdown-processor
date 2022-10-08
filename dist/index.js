@@ -58,9 +58,9 @@ async function markdownProcessor(inDir, outDir) {
         const dateA = new Date(a.metadata.writtenDate);
         const dateB = new Date(b.metadata.writtenDate);
         if (dateA < dateB)
-            return -1;
-        if (dateB < dateA)
             return 1;
+        if (dateB < dateA)
+            return -1;
         return 0;
     });
     console.log(chalk.cyan(`Processed ${result.length} markdowns`));
