@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
-import { ContentType, FrontMatterYaml, FrontMatterYamlType } from './fm-type.js';
+import { ContentType, FrontMatterYaml, FrontMatterYamlType, PostNameRegex } from './fm-type.js';
 import _Ajv from 'ajv';
 import _glob from 'glob';
 import path from 'path';
@@ -25,9 +25,6 @@ program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
 program.parse();
 
 async function markdownProcessor(inDir: string, outDir: string) {
-  await fs.rm(outDir, { recursive: true });
-  await fs.mkdir(outDir);
-
   const inDirFiles = await glob(path.join(inDir, '**/*.md'));
   const result: ContentType[] = [];
   const duplicateCheck = new Map<string, string[]>();
@@ -62,6 +59,7 @@ async function markdownProcessor(inDir: string, outDir: string) {
 
   if (errored) process.exit(1);
 
+  // Sort posts with writtenDate in descending order
   result.sort((a, b) => {
     const dateA = new Date(a.metadata.writtenDate);
     const dateB = new Date(b.metadata.writtenDate);
@@ -71,6 +69,9 @@ async function markdownProcessor(inDir: string, outDir: string) {
   });
 
   console.log(chalk.cyan(`Processed ${result.length} markdowns`));
+
+  await fs.rm(outDir, { recursive: true, force: true });
+  await fs.mkdir(outDir);
 
   await Promise.all(result.map(async (val) => {
     await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
@@ -124,6 +125,8 @@ async function processMd(filePath: string): Promise<ContentType | null> {
 
   fmYaml.writtenDate = new Date(fmYaml.writtenDate).toISOString();
   fmYaml.name ??= getName(filePath);
+
+  if (!PostNameRegex.test(fmYaml.name)) throw new Error(`name must match PostNameRegex: ${fmYaml.name}`);
 
   const { noPublish: _, name, ...omittedFm } = fmYaml;
 

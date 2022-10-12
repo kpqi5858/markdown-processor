@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
-import { FrontMatterYaml } from './fm-type.js';
+import { FrontMatterYaml, PostNameRegex } from './fm-type.js';
 import _Ajv from 'ajv';
 import _glob from 'glob';
 import path from 'path';
@@ -22,8 +22,6 @@ const validate = Ajv.compile(FrontMatterYaml);
 program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
 program.parse();
 async function markdownProcessor(inDir, outDir) {
-    await fs.rm(outDir, { recursive: true });
-    await fs.mkdir(outDir);
     const inDirFiles = await glob(path.join(inDir, '**/*.md'));
     const result = [];
     const duplicateCheck = new Map();
@@ -54,6 +52,7 @@ async function markdownProcessor(inDir, outDir) {
     });
     if (errored)
         process.exit(1);
+    // Sort posts with writtenDate in descending order
     result.sort((a, b) => {
         const dateA = new Date(a.metadata.writtenDate);
         const dateB = new Date(b.metadata.writtenDate);
@@ -64,6 +63,8 @@ async function markdownProcessor(inDir, outDir) {
         return 0;
     });
     console.log(chalk.cyan(`Processed ${result.length} markdowns`));
+    await fs.rm(outDir, { recursive: true, force: true });
+    await fs.mkdir(outDir);
     await Promise.all(result.map(async (val) => {
         await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
     }));
@@ -113,6 +114,8 @@ async function processMd(filePath) {
         .process(String(processed));
     fmYaml.writtenDate = new Date(fmYaml.writtenDate).toISOString();
     fmYaml.name ??= getName(filePath);
+    if (!PostNameRegex.test(fmYaml.name))
+        throw new Error(`name must match PostNameRegex: ${fmYaml.name}`);
     const { noPublish: _, name, ...omittedFm } = fmYaml;
     const stripped = String(await remark().use(strip).process(processed)).replace(/\n+/g, ' ');
     const description = omittedFm.description ?? `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;

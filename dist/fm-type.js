@@ -1,4 +1,5 @@
 import { Type } from '@sinclair/typebox';
+export const PostNameRegex = /^[a-zA-Z0-9_-]+$/;
 const FrontMatterRequired = Type.Object({
     title: Type.String(),
     /**
@@ -9,6 +10,7 @@ const FrontMatterRequired = Type.Object({
     writtenDate: Type.String(),
 });
 const FrontMatterOptional = Type.Partial(Type.Object({
+    subtitle: Type.String(),
     /**
     * If not set, it will grab from first sections of markdown content.
     */
@@ -20,10 +22,9 @@ const FrontMatterOptional = Type.Partial(Type.Object({
  */
 const FrontMatterOptionalStripped = Type.Partial(Type.Object({
     /**
-     * If not set, its file name(without extension) will be used. Duplicate name is not allowed.
-     * TODO: Maybe set proper regex (url-safe?)
+     * If not set, its file name(without extension) will be used. Must consist of letters/digits and '-', '_'. Duplicate name is not allowed.
      */
-    name: Type.String(),
+    name: Type.RegEx(PostNameRegex),
     /**
      * If set to true, it will not be included in processed.
      */
