@@ -43,7 +43,7 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
         : undefined;
 
       try {
-        const highlightedHtml = highlighter.codeToHtml(toText(node), { lang });
+        const highlightedHtml = highlighter.codeToHtml(toText(node, { whitespace: 'pre' }), { lang });
         const parsed = hastParser.parse(highlightedHtml);
         const codeChildren = parsed.children[0];
         if (codeChildren.type !== 'element')
