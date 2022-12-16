@@ -9,7 +9,7 @@ const hastParser = unified().use(rehypeParse, { fragment: true });
  *
  * Yes, there's already rehype-shiki but I decided to rewrite with their sources.
  */
-const rehypeShiki = ({ highlighter }) => {
+const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
     return (tree, vfile) => {
         visit(tree, 'element', (node, index, parent) => {
             // We are only selecting 'code' tag where parent is 'pre'
@@ -36,6 +36,10 @@ const rehypeShiki = ({ highlighter }) => {
                 parent.children = codeChildren.children;
             }
             catch (e) {
+                if (fatalOnError) {
+                    vfile.fail(e);
+                    return;
+                }
                 vfile.message('Warning: Error occured while trying to highlight the code block.');
                 vfile.message(e);
             }

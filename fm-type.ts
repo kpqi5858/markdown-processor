@@ -9,7 +9,7 @@ const FrontMatterRequired = Type.Object({
    *
    * It will be stored as ISO 8601 date format after processed.
    */
-  writtenDate: Type.String(),
+  writtenDate: Type.String()
 });
 
 const FrontMatterOptional = Type.Partial(Type.Object({
@@ -54,7 +54,7 @@ type FrontMatterMetadataType = Omit<FrontMatterYamlType & GeneratedMetadataType,
 export type ContentType = {
   name: string,
   metadata: FrontMatterMetadataType,
-  content: string
+  content: string,
 }
 
 /**

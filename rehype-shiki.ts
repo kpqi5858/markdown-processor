@@ -6,7 +6,14 @@ import { visit } from 'unist-util-visit';
 import { Highlighter} from 'shiki';
 
 interface Options {
+  /**
+   * Shiki highlighter object.
+   */
   highlighter: Highlighter;
+  /**
+   * Whether to fail when highlighting fails. Default is false.
+   */
+  fatalOnError?: boolean;
 }
 
 const hastParser = unified().use(rehypeParse, { fragment: true });
@@ -17,7 +24,7 @@ const hastParser = unified().use(rehypeParse, { fragment: true });
  *
  * Yes, there's already rehype-shiki but I decided to rewrite with their sources.
  */
-const rehypeShiki: Plugin<[Options], Root> = ({ highlighter }) => {
+const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = false}) => {
   return (tree, vfile) => {
     visit(tree, 'element', (node, index, parent) => {
       // We are only selecting 'code' tag where parent is 'pre'
@@ -49,6 +56,10 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter }) => {
 
         parent.children = codeChildren.children;
       } catch (e) {
+        if (fatalOnError) {
+          vfile.fail(e as Error);
+          return;
+        }
         vfile.message('Warning: Error occured while trying to highlight the code block.')
         vfile.message(e as Error);
       }

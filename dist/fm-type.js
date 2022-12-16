@@ -7,7 +7,7 @@ const FrontMatterRequired = Type.Object({
      *
      * It will be stored as ISO 8601 date format after processed.
      */
-    writtenDate: Type.String(),
+    writtenDate: Type.String()
 });
 const FrontMatterOptional = Type.Partial(Type.Object({
     subtitle: Type.String(),

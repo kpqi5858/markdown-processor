@@ -11,16 +11,17 @@
   },
   "devDependencies": {
     "@types/glob": "^8.0.0",
+    "@types/lodash": "^4.14.191",
     "@types/node": "^18.11.15",
     "typescript": "^4.9.4"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.25.13",
-    "ajv": "^8.11.2",
     "chalk": "^5.2.0",
     "commander": "^9.4.1",
     "glob": "^8.0.3",
     "hast-util-to-text": "^3.1.1",
+    "lodash": "^4.17.21",
     "rehype-parse": "^8.0.4",
     "rehype-preset-minify": "^6.0.0",
     "rehype-slug": "^5.1.0",

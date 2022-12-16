@@ -3,7 +3,6 @@ import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
 import { FrontMatterYaml, PostNameRegex } from './fm-type.js';
-import _Ajv from 'ajv';
 import _glob from 'glob';
 import path from 'path';
 import { promisify } from 'util';
@@ -18,13 +17,17 @@ import rehypeSlug from 'rehype-slug';
 import chalk from 'chalk';
 import shiki from 'shiki';
 import rehypeShiki from './rehype-shiki.js';
+import lodash from 'lodash';
+import { TypeCompiler } from '@sinclair/typebox/compiler';
+let shikiHighlighter;
 const glob = promisify(_glob);
-const Ajv = new _Ajv();
-const validate = Ajv.compile(FrontMatterYaml);
+const validate = TypeCompiler.Compile(FrontMatterYaml);
 program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
 program.parse();
 async function markdownProcessor(inDir, outDir) {
-    await getShikiHighlighter();
+    shikiHighlighter = await shiki.getHighlighter({
+        theme: 'material-palenight'
+    });
     const inDirFiles = await glob(path.join(inDir, '**/*.md'));
     const result = [];
     const duplicateCheck = new Map();
@@ -32,14 +35,14 @@ async function markdownProcessor(inDir, outDir) {
     for (const mdFile of inDirFiles) {
         const processed = await processMd(mdFile).catch((err) => {
             console.error(chalk.red.bold('An error has found on'), chalk.bold(mdFile));
-            console.error(chalk.red(err));
+            console.error(chalk.red('->', err));
             errored = true;
         });
-        if (processed == null)
+        if (!processed)
             continue;
-        const check = duplicateCheck.get(processed.name);
+        const check = duplicateCheck.get(processed.content.name);
         if (typeof check === 'undefined') {
-            duplicateCheck.set(processed.name, [mdFile]);
+            duplicateCheck.set(processed.content.name, [mdFile]);
         }
         else {
             check.push(mdFile);
@@ -57,8 +60,8 @@ async function markdownProcessor(inDir, outDir) {
         process.exit(1);
     // Sort posts with writtenDate in descending order
     result.sort((a, b) => {
-        const dateA = new Date(a.metadata.writtenDate);
-        const dateB = new Date(b.metadata.writtenDate);
+        const dateA = new Date(a.content.metadata.writtenDate);
+        const dateB = new Date(b.content.metadata.writtenDate);
         if (dateA < dateB)
             return 1;
         if (dateB < dateA)
@@ -69,12 +72,14 @@ async function markdownProcessor(inDir, outDir) {
     await fs.rm(outDir, { recursive: true, force: true });
     await fs.mkdir(outDir);
     await Promise.all(result.map(async (val) => {
-        await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
+        await fs.writeFile(path.join(outDir, val.content.name + '.json'), JSON.stringify(val.content));
     }));
-    await fs.writeFile(path.join(outDir, 'posts.json'), JSON.stringify(result.map((val) => {
-        const { content: _, ...omitted } = val;
-        return omitted;
-    })));
+    await fs.writeFile(path.join(outDir, 'posts.json'), JSON.stringify(result.reduce((prev, cur) => {
+        if (cur.unlisted)
+            return prev;
+        prev.push(lodash.omit(cur.content, ['content']));
+        return prev;
+    }, [])));
 }
 /**
  * Hopefully better implementation than before..
@@ -94,9 +99,14 @@ async function processMd(filePath) {
             if (fmYaml)
                 throw new Error('Multiple front-matter parsed');
             fmYaml = parse(node.value);
-            const valid = validate(fmYaml);
-            if (!valid)
-                throw new Error(`Front-matter validation failure\n${util.format(validate.errors)}`);
+            const valid = validate.Check(fmYaml);
+            if (!valid) {
+                const errorMsg = [];
+                for (const err of validate.Errors(fmYaml)) {
+                    errorMsg.push(util.format(err));
+                }
+                throw new Error('Front-matter validation failure\n' + errorMsg.join('\n'));
+            }
             // Remove this node https://unifiedjs.com/learn/recipe/remove-node/
             parent.children.splice(index, 1);
             return [SKIP, index];
@@ -111,7 +121,7 @@ async function processMd(filePath) {
     const html = await remark()
         .use(remarkRehype)
         .use(rehypeSlug)
-        .use(rehypeShiki, { highlighter: await getShikiHighlighter() })
+        .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
         .use(rehypePresetMinify)
         .use(rehypeStringify)
         // If we don't deep-copy like this, it will affect "processed" object. Therefore "stripped" won't work.
@@ -120,28 +130,23 @@ async function processMd(filePath) {
     fmYaml.name ??= getName(filePath);
     if (!PostNameRegex.test(fmYaml.name))
         throw new Error(`name must match PostNameRegex: ${fmYaml.name}`);
-    const { noPublish: _, name, ...omittedFm } = fmYaml;
+    const name = fmYaml.name;
     const stripped = String(await remark().use(strip).process(processed)).replace(/\n+/g, ' ');
-    const description = omittedFm.description ?? `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
+    const description = fmYaml.description ??
+        `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
     return {
-        content: String(html),
-        name,
-        metadata: {
-            description,
-            ...omittedFm
-        }
+        content: {
+            content: String(html),
+            name,
+            metadata: {
+                description,
+                ...lodash.omit(fmYaml, ['name', 'noPublish', 'unlisted'])
+            }
+        },
+        unlisted: fmYaml.unlisted
     };
 }
 function getName(filePath) {
     return path.parse(filePath).name;
-}
-let shikiHighlighter;
-/**
- * Is there any better way to initialize something "asynchronously"?
- */
-async function getShikiHighlighter() {
-    if (!shikiHighlighter)
-        shikiHighlighter = await shiki.getHighlighter({ theme: 'material-palenight' });
-    return shikiHighlighter;
 }
 export default markdownProcessor;
