@@ -28,11 +28,15 @@ const FrontMatterOptionalStripped = Type.Partial(Type.Object({
   /**
    * If not set, its file name(without extension) will be used. Must consist of letters/digits and '-', '_'. Duplicate name is not allowed.
    */
-   name: Type.RegEx(PostNameRegex),
-   /**
+  name: Type.RegEx(PostNameRegex),
+  /**
     * If set to true, it will not be included in processed.
     */
-   noPublish: Type.Boolean()
+  noPublish: Type.Boolean(),
+  /**
+   * If set to true, it will not be included in posts list.
+   */
+  unlisted: Type.Boolean()
 }));
 
 type GeneratedMetadataType = {

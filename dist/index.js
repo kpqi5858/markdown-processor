@@ -16,12 +16,15 @@ import { SKIP, visit } from 'unist-util-visit';
 import rehypePresetMinify from 'rehype-preset-minify';
 import rehypeSlug from 'rehype-slug';
 import chalk from 'chalk';
+import shiki from 'shiki';
+import rehypeShiki from './rehype-shiki.js';
 const glob = promisify(_glob);
 const Ajv = new _Ajv();
 const validate = Ajv.compile(FrontMatterYaml);
 program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
 program.parse();
 async function markdownProcessor(inDir, outDir) {
+    await getShikiHighlighter();
     const inDirFiles = await glob(path.join(inDir, '**/*.md'));
     const result = [];
     const duplicateCheck = new Map();
@@ -107,9 +110,10 @@ async function processMd(filePath) {
         return null;
     const html = await remark()
         .use(remarkRehype)
-        .use(rehypeStringify)
         .use(rehypeSlug)
+        .use(rehypeShiki, { highlighter: await getShikiHighlighter() })
         .use(rehypePresetMinify)
+        .use(rehypeStringify)
         // If we don't deep-copy like this, it will affect "processed" object. Therefore "stripped" won't work.
         .process(String(processed));
     fmYaml.writtenDate = new Date(fmYaml.writtenDate).toISOString();
@@ -131,3 +135,13 @@ async function processMd(filePath) {
 function getName(filePath) {
     return path.parse(filePath).name;
 }
+let shikiHighlighter;
+/**
+ * Is there any better way to initialize something "asynchronously"?
+ */
+async function getShikiHighlighter() {
+    if (!shikiHighlighter)
+        shikiHighlighter = await shiki.getHighlighter({ theme: 'material-palenight' });
+    return shikiHighlighter;
+}
+export default markdownProcessor;

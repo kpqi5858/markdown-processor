@@ -16,6 +16,8 @@ import { SKIP, visit } from 'unist-util-visit';
 import rehypePresetMinify from 'rehype-preset-minify';
 import rehypeSlug from 'rehype-slug';
 import chalk from 'chalk';
+import shiki, { Highlighter } from 'shiki';
+import rehypeShiki from './rehype-shiki.js';
 
 const glob = promisify(_glob);
 const Ajv = new _Ajv();
@@ -25,6 +27,8 @@ program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
 program.parse();
 
 async function markdownProcessor(inDir: string, outDir: string) {
+  await getShikiHighlighter();
+
   const inDirFiles = await glob(path.join(inDir, '**/*.md'));
   const result: ContentType[] = [];
   const duplicateCheck = new Map<string, string[]>();
@@ -117,9 +121,10 @@ async function processMd(filePath: string): Promise<ContentType | null> {
 
   const html = await remark()
   .use(remarkRehype)
-  .use(rehypeStringify)
   .use(rehypeSlug)
+  .use(rehypeShiki, {highlighter: await getShikiHighlighter()})
   .use(rehypePresetMinify)
+  .use(rehypeStringify)
   // If we don't deep-copy like this, it will affect "processed" object. Therefore "stripped" won't work.
   .process(String(processed));
 
@@ -146,3 +151,16 @@ async function processMd(filePath: string): Promise<ContentType | null> {
 function getName(filePath: string) {
   return path.parse(filePath).name;
 }
+
+let shikiHighlighter: Highlighter | undefined;
+
+/**
+ * Is there any better way to initialize something "asynchronously"?
+ */
+async function getShikiHighlighter() {
+  if (!shikiHighlighter)
+    shikiHighlighter = await shiki.getHighlighter({theme: 'material-palenight'});
+  return shikiHighlighter;
+}
+
+export default markdownProcessor;

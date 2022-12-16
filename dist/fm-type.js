@@ -26,8 +26,12 @@ const FrontMatterOptionalStripped = Type.Partial(Type.Object({
      */
     name: Type.RegEx(PostNameRegex),
     /**
-     * If set to true, it will not be included in processed.
+      * If set to true, it will not be included in processed.
+      */
+    noPublish: Type.Boolean(),
+    /**
+     * If set to true, it will not be included in posts list.
      */
-    noPublish: Type.Boolean()
+    unlisted: Type.Boolean()
 }));
 export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional, FrontMatterOptionalStripped], { additionalProperties: false });
