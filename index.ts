@@ -200,4 +200,4 @@ function getName(filePath: string) {
   return path.parse(filePath).name;
 }
 
-export default markdownProcessor;
+export { markdownProcessor, processMd };
