@@ -34,4 +34,5 @@ const FrontMatterOptionalStripped = Type.Partial(Type.Object({
      */
     unlisted: Type.Boolean()
 }));
+export const FrontMatterOptionalStrippedProperties = Object.freeze(Object.keys(FrontMatterOptionalStripped.properties));
 export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional, FrontMatterOptionalStripped], { additionalProperties: false });

@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
-import { FrontMatterYaml, PostNameRegex } from './fm-type.js';
+import { FrontMatterOptionalStrippedProperties, FrontMatterYaml, PostNameRegex } from './fm-type.js';
 import _glob from 'glob';
 import path from 'path';
 import { promisify } from 'util';
@@ -140,7 +140,7 @@ async function processMd(filePath) {
             name,
             metadata: {
                 description,
-                ...lodash.omit(fmYaml, ['name', 'noPublish', 'unlisted'])
+                ...lodash.omit(fmYaml, FrontMatterOptionalStrippedProperties)
             }
         },
         unlisted: fmYaml.unlisted
@@ -149,4 +149,4 @@ async function processMd(filePath) {
 function getName(filePath) {
     return path.parse(filePath).name;
 }
-export default markdownProcessor;
+export { markdownProcessor, processMd };

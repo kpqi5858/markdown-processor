@@ -4,6 +4,7 @@ import util from 'util';
 import { program } from 'commander';
 import {
   ContentType,
+  FrontMatterOptionalStrippedProperties,
   FrontMatterYaml,
   FrontMatterYamlType,
   PostNameRegex,
@@ -189,7 +190,7 @@ async function processMd(
       name,
       metadata: {
         description,
-        ...lodash.omit(fmYaml, ['name', 'noPublish', 'unlisted'])
+        ...lodash.omit(fmYaml, FrontMatterOptionalStrippedProperties)
       }
     },
     unlisted: fmYaml.unlisted

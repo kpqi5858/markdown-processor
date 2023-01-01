@@ -39,6 +39,8 @@ const FrontMatterOptionalStripped = Type.Partial(Type.Object({
   unlisted: Type.Boolean()
 }));
 
+export const FrontMatterOptionalStrippedProperties = Object.freeze(Object.keys(FrontMatterOptionalStripped.properties)) as readonly (keyof Static<typeof FrontMatterOptionalStripped>)[];
+
 type GeneratedMetadataType = {
   description: string
 };
