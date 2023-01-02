@@ -27,11 +27,6 @@ import rehypeShiki from './rehype-shiki.js';
 import lodash from 'lodash';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 
-interface ProcessedMarkdownResult {
-  content: ContentType;
-  unlisted?: boolean;
-}
-
 let shikiHighlighter: Highlighter;
 const glob = promisify(_glob);
 const validate = TypeCompiler.Compile(FrontMatterYaml);
@@ -106,14 +101,13 @@ async function markdownProcessor(inDir: string, outDir: string) {
 
   await fs.writeFile(
     path.join(outDir, 'posts.json'),
-    JSON.stringify(
-      result.reduce((prev, cur) => {
-        if (cur.unlisted) return prev;
-        prev.push(lodash.omit(cur.content, ['content']));
-        return prev;
-      }, [] as PostsListType)
-    )
-  );
+    JSON.stringify(generatePostsjson(result))
+  )
+}
+
+interface ProcessedMarkdownResult {
+  content: ContentType;
+  unlisted?: boolean;
 }
 
 /**
@@ -125,6 +119,10 @@ async function markdownProcessor(inDir: string, outDir: string) {
 async function processMd(
   filePath: string
 ): Promise<ProcessedMarkdownResult | null> {
+  const name = getName(filePath);
+  if (!PostNameRegex.test(name))
+    throw new Error('File name does not match PostNameRegex');
+
   const fileContent = await fs.readFile(filePath);
 
   let fmYaml: FrontMatterYamlType | undefined;
@@ -170,12 +168,7 @@ async function processMd(
     .process(String(processed));
 
   fmYaml.writtenDate = new Date(fmYaml.writtenDate).toISOString();
-  fmYaml.name ??= getName(filePath);
 
-  if (!PostNameRegex.test(fmYaml.name))
-    throw new Error(`name must match PostNameRegex: ${fmYaml.name}`);
-
-  const name = fmYaml.name;
   const stripped = String(await remark().use(strip).process(processed)).replace(
     /\n+/g,
     ' '
@@ -199,6 +192,17 @@ async function processMd(
 
 function getName(filePath: string) {
   return path.parse(filePath).name;
+}
+
+/**
+ * Omits content from each ContentType.
+ */
+function generatePostsjson(result: ProcessedMarkdownResult[]) {
+  return result.reduce((prev, cur) => {
+    if (cur.unlisted) return prev;
+    prev.push(lodash.omit(cur.content, ['content']));
+    return prev;
+  }, [] as PostsListType)
 }
 
 export { markdownProcessor, processMd };

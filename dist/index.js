@@ -74,12 +74,7 @@ async function markdownProcessor(inDir, outDir) {
     await Promise.all(result.map(async (val) => {
         await fs.writeFile(path.join(outDir, val.content.name + '.json'), JSON.stringify(val.content));
     }));
-    await fs.writeFile(path.join(outDir, 'posts.json'), JSON.stringify(result.reduce((prev, cur) => {
-        if (cur.unlisted)
-            return prev;
-        prev.push(lodash.omit(cur.content, ['content']));
-        return prev;
-    }, [])));
+    await fs.writeFile(path.join(outDir, 'posts.json'), JSON.stringify(generatePostsjson(result)));
 }
 /**
  * Hopefully better implementation than before..
@@ -88,6 +83,9 @@ async function markdownProcessor(inDir, outDir) {
  * @throws If there's problem with markdown file
  */
 async function processMd(filePath) {
+    const name = getName(filePath);
+    if (!PostNameRegex.test(name))
+        throw new Error('File name does not match PostNameRegex');
     const fileContent = await fs.readFile(filePath);
     let fmYaml;
     const processed = await remark()
@@ -127,10 +125,6 @@ async function processMd(filePath) {
         // If we don't deep-copy like this, it will affect "processed" object. Therefore "stripped" won't work.
         .process(String(processed));
     fmYaml.writtenDate = new Date(fmYaml.writtenDate).toISOString();
-    fmYaml.name ??= getName(filePath);
-    if (!PostNameRegex.test(fmYaml.name))
-        throw new Error(`name must match PostNameRegex: ${fmYaml.name}`);
-    const name = fmYaml.name;
     const stripped = String(await remark().use(strip).process(processed)).replace(/\n+/g, ' ');
     const description = fmYaml.description ??
         `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
@@ -148,5 +142,16 @@ async function processMd(filePath) {
 }
 function getName(filePath) {
     return path.parse(filePath).name;
+}
+/**
+ * Omits content from each ContentType.
+ */
+function generatePostsjson(result) {
+    return result.reduce((prev, cur) => {
+        if (cur.unlisted)
+            return prev;
+        prev.push(lodash.omit(cur.content, ['content']));
+        return prev;
+    }, []);
 }
 export { markdownProcessor, processMd };
