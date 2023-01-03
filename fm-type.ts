@@ -26,7 +26,7 @@ const FrontMatterOptional = Type.Partial(Type.Object({
  */
 const FrontMatterOptionalStripped = Type.Partial(Type.Object({
   /**
-    * If set to true, it will not be included in processed.
+    * If set to true, it will not be processed.
     */
   noPublish: Type.Boolean(),
   /**
@@ -52,10 +52,11 @@ type FrontMatterMetadataType = Omit<FrontMatterYamlType & GeneratedMetadataType,
 export type ContentType = {
   name: string,
   metadata: FrontMatterMetadataType,
+  unlisted?: true,
   content: string,
 }
 
 /**
  * The type of generated posts.json output.
  */
-export type PostsListType = Omit<ContentType, 'content'>[];
+export type PostsListType = Omit<ContentType, 'content' | 'unlisted'>[];

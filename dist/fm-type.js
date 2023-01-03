@@ -22,7 +22,7 @@ const FrontMatterOptional = Type.Partial(Type.Object({
  */
 const FrontMatterOptionalStripped = Type.Partial(Type.Object({
     /**
-      * If set to true, it will not be included in processed.
+      * If set to true, it will not be processed.
       */
     noPublish: Type.Boolean(),
     /**

@@ -6,7 +6,6 @@ import {
   ContentType,
   FrontMatterOptionalStrippedProperties,
   FrontMatterYaml,
-  FrontMatterYamlType,
   PostNameRegex,
   PostsListType
 } from './fm-type.js';
@@ -40,7 +39,7 @@ async function markdownProcessor(inDir: string, outDir: string) {
   });
 
   const inDirFiles = await glob(path.join(inDir, '**/*.md'));
-  const result: ProcessedMarkdownResult[] = [];
+  const result: ContentType[] = [];
   const duplicateCheck = new Map<string, string[]>();
 
   let errored = false;
@@ -56,9 +55,9 @@ async function markdownProcessor(inDir: string, outDir: string) {
     });
     if (!processed) continue;
 
-    const check = duplicateCheck.get(processed.content.name);
+    const check = duplicateCheck.get(processed.name);
     if (typeof check === 'undefined') {
-      duplicateCheck.set(processed.content.name, [mdFile]);
+      duplicateCheck.set(processed.name, [mdFile]);
     } else {
       check.push(mdFile);
     }
@@ -78,8 +77,8 @@ async function markdownProcessor(inDir: string, outDir: string) {
 
   // Sort posts with writtenDate in descending order
   result.sort((a, b) => {
-    const dateA = new Date(a.content.metadata.writtenDate);
-    const dateB = new Date(b.content.metadata.writtenDate);
+    const dateA = new Date(a.metadata.writtenDate);
+    const dateB = new Date(b.metadata.writtenDate);
     if (dateA < dateB) return 1;
     if (dateB < dateA) return -1;
     return 0;
@@ -93,8 +92,8 @@ async function markdownProcessor(inDir: string, outDir: string) {
   await Promise.all(
     result.map(async (val) => {
       await fs.writeFile(
-        path.join(outDir, val.content.name + '.json'),
-        JSON.stringify(val.content)
+        path.join(outDir, val.name + '.json'),
+        JSON.stringify(val)
       );
     })
   );
@@ -105,9 +104,43 @@ async function markdownProcessor(inDir: string, outDir: string) {
   )
 }
 
-interface ProcessedMarkdownResult {
-  content: ContentType;
-  unlisted?: boolean;
+/**
+ * Extracts front matter from markdown.
+ * @param markdown Markdown content.
+ * @returns An object with two properties.
+ * 'markdown' property is parsed markdown with fromt matter extracted (removed),
+ * And 'parsedFm' property is the parsed front matter.
+ * 'parsedFm' may be undefined if no front matter is detected.
+ */
+async function extractFrontMatter(markdown: string) {
+  let frontMatter: unknown;
+
+  const processed = await remark()
+    .use(remarkFrontmatter, ['yaml'])
+    .use(() => (tree, vfile, next) => {
+      visit(tree, 'yaml', (node, index, parent) => {
+        // It will never parse multiple front matters. Don't need to check multiples.
+        frontMatter = parse(node.value);
+
+        // Remove this node https://unifiedjs.com/learn/recipe/remove-node/
+        // @ts-expect-error It should be never null, unless we are dealing with root directly.
+        parent.children.splice(index, 1);
+        return [SKIP, index];
+      });
+      next();
+    })
+    .process(markdown);
+
+  return {
+    /**
+     * Parsed markdown without front matter
+     */
+    markdown: processed,
+    /**
+     * Parsed front matter. Can be undefined if no front matter is detected.
+     */
+    frontMatter
+  };
 }
 
 /**
@@ -118,45 +151,25 @@ interface ProcessedMarkdownResult {
  */
 async function processMd(
   filePath: string
-): Promise<ProcessedMarkdownResult | null> {
+): Promise<ContentType | null> {
   const name = getName(filePath);
-  if (!PostNameRegex.test(name))
-    throw new Error('File name does not match PostNameRegex');
+  const fileContent = (await fs.readFile(filePath)).toString('utf-8');
 
-  const fileContent = await fs.readFile(filePath);
+  const { markdown, frontMatter } = await extractFrontMatter(fileContent);
+  if (!frontMatter) throw new Error('No front-matter detected');
 
-  let fmYaml: FrontMatterYamlType | undefined;
+  const valid = validate.Check(frontMatter);
+  if (!valid) {
+    const errors: string[] = [];
+    for (const err of validate.Errors(frontMatter)) {
+      errors.push(util.format(err));
+    }
+    throw new Error(
+      'Front-matter validation failure\n' + errors.join('\n')
+    );
+  }
 
-  const processed = await remark()
-    .use(remarkFrontmatter, ['yaml'])
-    .use(() => (tree, vfile, next) => {
-      visit(tree, 'yaml', (node, index, parent) => {
-        if (index == null || parent == null)
-          throw new Error('Unexpected null parameter');
-        if (fmYaml) throw new Error('Multiple front-matter parsed');
-
-        fmYaml = parse(node.value);
-        const valid = validate.Check(fmYaml);
-        if (!valid) {
-          const errorMsg: string[] = [];
-          for (const err of validate.Errors(fmYaml)) {
-            errorMsg.push(util.format(err));
-          }
-          throw new Error(
-            'Front-matter validation failure\n' + errorMsg.join('\n')
-          );
-        }
-
-        // Remove this node https://unifiedjs.com/learn/recipe/remove-node/
-        parent.children.splice(index, 1);
-        return [SKIP, index];
-      });
-      next();
-    })
-    .process(fileContent);
-
-  if (!fmYaml) throw new Error('No front-matter detected');
-  if (fmYaml.noPublish) return null;
+  if (frontMatter.noPublish) return null;
 
   const html = await remark()
     .use(remarkRehype)
@@ -164,29 +177,27 @@ async function processMd(
     .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
     .use(rehypePresetMinify)
     .use(rehypeStringify)
-    // If we don't deep-copy like this, it will affect "processed" object. Therefore "stripped" won't work.
-    .process(String(processed));
+    // If we don't deep-copy like this, it will affect "markdown" object. Therefore "stripped" won't work.
+    .process(String(markdown));
 
-  fmYaml.writtenDate = new Date(fmYaml.writtenDate).toISOString();
+  frontMatter.writtenDate = new Date(frontMatter.writtenDate).toISOString();
 
-  const stripped = String(await remark().use(strip).process(processed)).replace(
+  const stripped = String(await remark().use(strip).process(markdown)).replace(
     /\n+/g,
     ' '
   );
   const description =
-    fmYaml.description ??
+    frontMatter.description ??
     `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
 
   return {
-    content: {
-      content: String(html),
-      name,
-      metadata: {
-        description,
-        ...lodash.omit(fmYaml, FrontMatterOptionalStrippedProperties)
-      }
+    content: String(html),
+    name,
+    metadata: {
+      description,
+      ...lodash.omit(frontMatter, FrontMatterOptionalStrippedProperties)
     },
-    unlisted: fmYaml.unlisted
+    unlisted: frontMatter.unlisted ? true : undefined
   };
 }
 
@@ -197,12 +208,175 @@ function getName(filePath: string) {
 /**
  * Omits content from each ContentType.
  */
-function generatePostsjson(result: ProcessedMarkdownResult[]) {
+function generatePostsjson(result: ContentType[]) {
   return result.reduce((prev, cur) => {
     if (cur.unlisted) return prev;
-    prev.push(lodash.omit(cur.content, ['content']));
+    prev.push(lodash.omit(cur, ['content']));
     return prev;
   }, [] as PostsListType)
+}
+
+
+interface DiffEntry {
+  /**
+   * The processed markdown json.
+   */
+  processedFile: string,
+  /**
+   * The original markdown file.
+   */
+  originalFile: string
+};
+
+interface DiffResult {
+  /**
+   * Case 1 - Processed file is newer than original file.
+   * Don't need to process.
+   */
+  case1: DiffEntry[],
+  /**
+   * Case 2 - Professed file is older than original file.
+   * Need to freshly process.
+   */
+  case2: DiffEntry[],
+  /**
+   * Case 3 - Processed file exists, but original file not exists.
+   * Need to remove the processed file.
+   */
+  case3: Omit<DiffEntry, 'originalFile'>[],
+  /**
+   * Case 4 - Processed file not exists, but orignal file exists.
+   * Need to newly process. This may caused by 'noPublish' property on front matter.
+   */
+  case4: Omit<DiffEntry, 'processedFile'>[]
+};
+
+/**
+ * Computes difference from two list of files. Make sure there is no duplicates on both.
+ * @returns DiffResult object.
+ */
+async function diff(processeds: string[], originals: string[]): Promise<DiffResult> {
+  const result: DiffResult = {
+    case1: [],
+    case2: [],
+    case3: [],
+    case4: []
+  };
+  const { case1, case2, case3, case4 } = result;
+
+  const processedMap = new Map<string, { path: string, mtime: Date }>();
+  for (const path of processeds) {
+    processedMap.set(getName(path), {
+      path,
+      mtime: (await fs.stat(path)).mtime
+    });
+  }
+
+  const originalMap = new Map<string, { path: string, mtime: Date }>();
+  for (const path of originals) {
+    originalMap.set(getName(path), {
+      path,
+      mtime: (await fs.stat(path)).mtime
+    });
+  }
+
+  for (const [name, processedStat] of processedMap.entries()) {
+    const originalStat = originalMap.get(name);
+
+    // Case 1 and 2
+    if (originalStat) {
+      const caseEntry = {
+        originalFile: originalStat.path,
+        processedFile: processedStat.path
+      };
+
+      if (processedStat.mtime > originalStat.mtime) {
+        case1.push(caseEntry);
+      } else {
+        case2.push(caseEntry);
+      }
+
+      processedMap.delete(name);
+      originalMap.delete(name);
+    }
+  }
+
+  // Case 3
+  for (const processedStat of processedMap.values()) {
+    case3.push({
+      processedFile: processedStat.path
+    });
+  }
+
+  // Case 4
+  for (const originalStat of originalMap.values()) {
+    case4.push({
+      originalFile: originalStat.path
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Checks for file names that doesn't match PostNameRegex.
+ * @param files File paths to check.
+ * @returns Array of failed file paths. Empty if there was none.
+ */
+function checkFilenamesRegex(files: string[]) {
+  return files.reduce((fails, path) => {
+    if (!PostNameRegex.test(getName(path))) {
+      fails.push(path);
+    }
+    return fails;
+  }, [] as string[]);
+}
+
+/**
+ * Checks for duplicate file names.
+ * @param files File paths to check.
+ * @returns Object with 'success' property.
+ * If succeed, it will set to true.
+ * Otherwise, it will set to false and have 'fails' property which contains key-value pair of duplicated name and corresponding file paths.
+ */
+function checkDuplicates(files: string[]) {
+  const duplicateCheck = new Map<string, string[]>();
+  files.forEach((path) => {
+    const name = getName(path);
+    const check = duplicateCheck.get(name);
+    if (typeof check === 'undefined') {
+      duplicateCheck.set(name, [path]);
+    } else {
+      check.push(path);
+    }
+  });
+
+  interface ResultSuccess {
+    success: true
+  };
+
+  interface ResultFailed {
+    success: false,
+    fails: Record<string, string[]>
+  };
+
+  let success = true;
+  const resultSuccess: ResultSuccess = {
+    success: true
+  };
+  const resultFailed: ResultFailed = {
+    success: false,
+    fails: {}
+  };
+
+  duplicateCheck.forEach((value, key) => {
+    if (value.length !== 1) {
+      success = false;
+      resultFailed.fails[key] = value;
+    }
+  });
+
+  return success ? resultSuccess : resultFailed;
 }
 
 export { markdownProcessor, processMd };

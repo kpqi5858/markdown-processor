@@ -1,7 +1,7 @@
 import { unified } from 'unified';
 import rehypeParse from 'rehype-parse';
 import { toText } from 'hast-util-to-text';
-import { visit } from 'unist-util-visit';
+import { SKIP, visit } from 'unist-util-visit';
 const hastParser = unified().use(rehypeParse, { fragment: true });
 /**
  * Very hacky code highlighting with shiki.
@@ -13,13 +13,11 @@ const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
     return (tree, vfile) => {
         visit(tree, 'element', (node, index, parent) => {
             // We are only selecting 'code' tag where parent is 'pre'
-            if (!parent ||
-                parent.type !== 'element' ||
+            if (parent?.type !== 'element' ||
                 parent.tagName !== 'pre' ||
-                node.tagName !== 'code' ||
-                !node.properties)
+                node.tagName !== 'code')
                 return;
-            const className = node.properties.className;
+            const className = node.properties?.className;
             const lang = Array.isArray(className)
                 ? getLanguage(className)
                 : undefined;
@@ -33,7 +31,9 @@ const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
                 const codeTagStyle = codeChildren.properties?.style;
                 if (typeof codeTagStyle === 'string')
                     addStyle(parent, codeTagStyle);
-                parent.children = codeChildren.children;
+                // Replace the node with parsed children https://unifiedjs.com/learn/recipe/remove-node/
+                parent.children.splice(index, 1, ...codeChildren.children);
+                return [SKIP, index];
             }
             catch (e) {
                 if (fatalOnError) {
