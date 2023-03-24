@@ -22,9 +22,11 @@ import { TypeCompiler } from '@sinclair/typebox/compiler';
 let shikiHighlighter;
 const glob = promisify(_glob);
 const validate = TypeCompiler.Compile(FrontMatterYaml);
-program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
+program
+    .option('--posts <name>', 'Specify the file name of posts collection.', 'posts')
+    .argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
 program.parse();
-async function markdownProcessor(inDir, outDir) {
+async function markdownProcessor(postsName, inDir, outDir) {
     shikiHighlighter = await shiki.getHighlighter({
         theme: 'material-palenight'
     });
@@ -74,17 +76,19 @@ async function markdownProcessor(inDir, outDir) {
     await Promise.all(result.map(async (val) => {
         await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
     }));
-    await fs.writeFile(path.join(outDir, 'posts.json'), JSON.stringify(generatePostsjson(result)));
+    await fs.writeFile(path.join(outDir, postsName + '.json'), JSON.stringify(generatePostsjson(result)));
 }
 /**
  * Extracts front matter from markdown.
  * @param markdown Markdown content.
  * @returns An object with two properties.
- * 'markdown' property is parsed markdown with fromt matter extracted (removed),
+ * 'markdown' property is markdown with fromt matter extracted (removed),
  * And 'parsedFm' property is the parsed front matter.
  * 'parsedFm' may be undefined if no front matter is detected.
  */
 async function extractFrontMatter(markdown) {
+    // TODO: Maybe we shouldn't parse the entire markdown?
+    // Just only parse the front matter part.
     let frontMatter;
     const processed = await remark()
         .use(remarkFrontmatter, ['yaml'])
@@ -102,9 +106,9 @@ async function extractFrontMatter(markdown) {
         .process(markdown);
     return {
         /**
-         * Parsed markdown without front matter
+         * Markdown without front matter
          */
-        markdown: processed,
+        markdown: String(processed),
         /**
          * Parsed front matter. Can be undefined if no front matter is detected.
          */
@@ -139,8 +143,9 @@ async function processMd(filePath) {
         .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
         .use(rehypePresetMinify)
         .use(rehypeStringify)
-        // If we don't deep-copy like this, it will affect "markdown" object. Therefore "stripped" won't work.
-        .process(String(markdown));
+        // It will create and process with its own VFile with immutable string.
+        // If we pass VFile directly, it will modify that VFile, which we don't want.
+        .process(markdown);
     frontMatter.writtenDate = new Date(frontMatter.writtenDate).toISOString();
     const stripped = String(await remark().use(strip).process(markdown)).replace(/\n+/g, ' ');
     const description = frontMatter.description ??
@@ -155,6 +160,11 @@ async function processMd(filePath) {
         unlisted: frontMatter.unlisted ? true : undefined
     };
 }
+/**
+ * Get name of this markdown (based on file name)
+ * @param filePath Path to markdown file.
+ * @returns The name.
+ */
 function getName(filePath) {
     return path.parse(filePath).name;
 }
@@ -243,11 +253,9 @@ function checkFilenamesRegex(files) {
     }, []);
 }
 /**
- * Checks for duplicate file names.
+ * Checks for duplicated file names.
  * @param files File paths to check.
- * @returns Object with 'success' property.
- * If succeed, it will set to true.
- * Otherwise, it will set to false and have 'fails' property which contains key-value pair of duplicated name and corresponding file paths.
+ * @returns If there's duplicates, returns key-value pair of duplicated name and corresponding file paths.
  */
 function checkDuplicates(files) {
     const duplicateCheck = new Map();
@@ -261,22 +269,14 @@ function checkDuplicates(files) {
             check.push(path);
         }
     });
-    ;
-    ;
     let success = true;
-    const resultSuccess = {
-        success: true
-    };
-    const resultFailed = {
-        success: false,
-        fails: {}
-    };
+    const fails = {};
     duplicateCheck.forEach((value, key) => {
         if (value.length !== 1) {
             success = false;
-            resultFailed.fails[key] = value;
+            fails[key] = value;
         }
     });
-    return success ? resultSuccess : resultFailed;
+    return success ? undefined : fails;
 }
 export { markdownProcessor, processMd };

@@ -33,7 +33,7 @@ const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
                     addStyle(parent, codeTagStyle);
                 // Replace the node with parsed children https://unifiedjs.com/learn/recipe/remove-node/
                 parent.children.splice(index, 1, ...codeChildren.children);
-                return [SKIP, index];
+                return [SKIP];
             }
             catch (e) {
                 if (fatalOnError) {

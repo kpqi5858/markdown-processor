@@ -30,10 +30,12 @@ let shikiHighlighter: Highlighter;
 const glob = promisify(_glob);
 const validate = TypeCompiler.Compile(FrontMatterYaml);
 
-program.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
+program
+.option('--posts <name>', 'Specify the file name of posts collection.', 'posts')
+.argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
 program.parse();
 
-async function markdownProcessor(inDir: string, outDir: string) {
+async function markdownProcessor(postsName: string, inDir: string, outDir: string) {
   shikiHighlighter = await shiki.getHighlighter({
     theme: 'material-palenight'
   });
@@ -99,7 +101,7 @@ async function markdownProcessor(inDir: string, outDir: string) {
   );
 
   await fs.writeFile(
-    path.join(outDir, 'posts.json'),
+    path.join(outDir, postsName + '.json'),
     JSON.stringify(generatePostsjson(result))
   )
 }
@@ -108,11 +110,14 @@ async function markdownProcessor(inDir: string, outDir: string) {
  * Extracts front matter from markdown.
  * @param markdown Markdown content.
  * @returns An object with two properties.
- * 'markdown' property is parsed markdown with fromt matter extracted (removed),
- * And 'parsedFm' property is the parsed front matter.
+ * 'markdown' is markdown with fromt matter extracted (removed),
+ * And 'parsedFm' is the parsed front matter.
  * 'parsedFm' may be undefined if no front matter is detected.
  */
 async function extractFrontMatter(markdown: string) {
+  // TODO: Maybe it shouldn't parse the entire markdown?
+  // Just only parse the front matter part.
+
   let frontMatter: unknown;
 
   const processed = await remark()
@@ -133,9 +138,9 @@ async function extractFrontMatter(markdown: string) {
 
   return {
     /**
-     * Parsed markdown without front matter
+     * Markdown without front matter
      */
-    markdown: processed,
+    markdown: String(processed),
     /**
      * Parsed front matter. Can be undefined if no front matter is detected.
      */
@@ -177,8 +182,9 @@ async function processMd(
     .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
     .use(rehypePresetMinify)
     .use(rehypeStringify)
-    // If we don't deep-copy like this, it will affect "markdown" object. Therefore "stripped" won't work.
-    .process(String(markdown));
+    // It will create and process with its own VFile with immutable string.
+    // If we pass VFile directly, it will modify that VFile, which we don't want.
+    .process(markdown);
 
   frontMatter.writtenDate = new Date(frontMatter.writtenDate).toISOString();
 
@@ -201,6 +207,11 @@ async function processMd(
   };
 }
 
+/**
+ * Get name of this markdown (based on file name)
+ * @param filePath Path to markdown file.
+ * @returns The name.
+ */
 function getName(filePath: string) {
   return path.parse(filePath).name;
 }
@@ -333,11 +344,9 @@ function checkFilenamesRegex(files: string[]) {
 }
 
 /**
- * Checks for duplicate file names.
+ * Checks for duplicated file names.
  * @param files File paths to check.
- * @returns Object with 'success' property.
- * If succeed, it will set to true.
- * Otherwise, it will set to false and have 'fails' property which contains key-value pair of duplicated name and corresponding file paths.
+ * @returns If there's duplicates, returns key-value pair of duplicated name and corresponding file paths.
  */
 function checkDuplicates(files: string[]) {
   const duplicateCheck = new Map<string, string[]>();
@@ -351,32 +360,17 @@ function checkDuplicates(files: string[]) {
     }
   });
 
-  interface ResultSuccess {
-    success: true
-  };
-
-  interface ResultFailed {
-    success: false,
-    fails: Record<string, string[]>
-  };
-
   let success = true;
-  const resultSuccess: ResultSuccess = {
-    success: true
-  };
-  const resultFailed: ResultFailed = {
-    success: false,
-    fails: {}
-  };
 
+  const fails: Record<string, string[]> = {};
   duplicateCheck.forEach((value, key) => {
     if (value.length !== 1) {
       success = false;
-      resultFailed.fails[key] = value;
+      fails[key] = value;
     }
   });
 
-  return success ? resultSuccess : resultFailed;
+  return success ? undefined : fails;
 }
 
 export { markdownProcessor, processMd };
