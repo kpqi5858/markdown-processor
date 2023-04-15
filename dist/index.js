@@ -22,6 +22,7 @@ let shikiHighlighter;
 const validate = TypeCompiler.Compile(FrontMatterYaml);
 program
     .option('--posts <name>', 'Specify the file name of posts collection.', 'posts')
+    .option('-f, --force', 'Process all markdowns freshly.')
     .argument('<input-dir>')
     .argument('<out-dir>')
     .action(newMarkdownProcessor);
@@ -52,7 +53,7 @@ function timer() {
         }
     })();
 }
-async function newMarkdownProcessor(inDir, outDir, { posts: postsName }) {
+async function newMarkdownProcessor(inDir, outDir, { posts: postsName, force }) {
     shikiHighlighter = await shiki.getHighlighter({
         theme: 'css-variables',
     });
@@ -80,20 +81,22 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName }) {
         return path.parse(file).name !== postsName;
     });
     const res = await diff(outDirFiles, inDirFiles);
-    for (const { processedFile: path } of res.case3) {
-        await fs.rm(path);
-    }
-    const needToProcess = [...res.case2, ...res.case4].map((file) => file.originalFile);
+    await rmAll(res.case3.map((v) => v.processedFile));
+    const needToProcess = [
+        ...res.case2,
+        ...res.case4,
+        ...(force ? res.case1 : []),
+    ].map((file) => file.originalFile);
     const result = [];
     const errors = [];
-    for (const md of needToProcess) {
+    await asyncFor(needToProcess, async (md) => {
         const processed = await processMd(md).catch((err) => {
             errors.push([md, err]);
         });
         if (!processed)
-            continue;
+            return;
         result.push(processed);
-    }
+    });
     if (errors.length !== 0) {
         for (const [file, error] of errors) {
             errBegin('An error has found on', file);
@@ -102,14 +105,14 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName }) {
         return;
     }
     console.log(chalk.cyan(`Processed ${result.length} markdowns in ${took.timeMs()}ms`));
-    await Promise.all(result.map(async (val) => {
-        await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
-    }));
+    await asyncFor(result, (val) => {
+        return fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
+    });
     const posts = generatePostsjson(result);
-    await Promise.all(res.case1.map(async ({ processedFile: file }) => {
+    await asyncFor(res.case1, async ({ processedFile: file }) => {
         const content = (await fs.readFile(file)).toString('utf-8');
         posts.push(...generatePostsjson([JSON.parse(content)]));
-    }));
+    });
     // Sort posts with writtenDate in descending order
     posts.sort((a, b) => {
         const dateA = new Date(a.metadata.writtenDate);
@@ -235,23 +238,23 @@ async function diff(processeds, originals) {
     };
     const { case1, case2, case3, case4 } = result;
     const processedMap = new Map();
-    for (const path of processeds) {
+    await asyncFor(processeds, async (path) => {
         const name = getName(path);
         processedMap.set(name, {
             name,
             path,
             mtime: (await fs.stat(path)).mtime,
         });
-    }
+    });
     const originalMap = new Map();
-    for (const path of originals) {
+    await asyncFor(originals, async (path) => {
         const name = getName(path);
         originalMap.set(name, {
             name,
             path,
             mtime: (await fs.stat(path)).mtime,
         });
-    }
+    });
     for (const [name, processedStat] of processedMap.entries()) {
         const originalStat = originalMap.get(name);
         // Case 1 and 2
@@ -330,4 +333,10 @@ function checkDuplicates(files) {
 function minifyHtml(html) {
     const buf = _minifyHtml.minify(Buffer.from(html), { minify_css: true });
     return buf.toString('utf-8');
+}
+async function rmAll(paths) {
+    return asyncFor(paths, (path) => fs.rm(path));
+}
+async function asyncFor(arr, f) {
+    return await Promise.all(arr.map(f));
 }

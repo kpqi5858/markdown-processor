@@ -4,11 +4,12 @@ Used for my personal site. I don't really encourage you to use this for your pro
 
 # Usage
 
-`node dist/index.js [--posts "posts"] <inDir> <outDir>`
+`node dist/index.js [options] <inDir> <outDir>`
 
 - `<inDir>` Where your markdown files in.
 - `<outDir>` Where to put processed markdowns.
 - `--posts` File name of posts collection. Default is "posts"
+- `-f, --force` Process all markdowns freshly.
 
 markdown-processor will search for markdowns in `<inDir>` recursively, and process them to json files, with collection of posts that doesn't contain contents.
 
