@@ -3,9 +3,8 @@ import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
 import { FrontMatterOptionalStrippedProperties, FrontMatterYaml, PostNameRegex, } from './fm-type.js';
-import _glob from 'glob';
+import { glob } from 'glob';
 import path from 'path';
-import { promisify } from 'util';
 import { remark } from 'remark';
 import strip from 'strip-markdown';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -19,7 +18,6 @@ import rehypeShiki from './rehype-shiki.js';
 import lodash from 'lodash';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 let shikiHighlighter;
-const glob = promisify(_glob);
 const validate = TypeCompiler.Compile(FrontMatterYaml);
 program
     .option('--posts <name>', 'Specify the file name of posts collection.', 'posts')

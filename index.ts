@@ -9,9 +9,8 @@ import {
   PostNameRegex,
   PostsListType,
 } from './fm-type.js';
-import _glob from 'glob';
+import { glob } from 'glob';
 import path from 'path';
-import { promisify } from 'util';
 import { remark } from 'remark';
 import strip from 'strip-markdown';
 import remarkFrontmatter from 'remark-frontmatter';
@@ -26,7 +25,6 @@ import lodash from 'lodash';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 
 let shikiHighlighter: Highlighter;
-const glob = promisify(_glob);
 const validate = TypeCompiler.Compile(FrontMatterYaml);
 
 program
