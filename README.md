@@ -10,7 +10,7 @@ Used for my personal site. I don't really encourage you to use this for your pro
 - `<outDir>` Where to put processed markdowns.
 - `--posts` File name of posts collection. Default is "posts"
 
-markdown-processor will search for markdowns in `<inDir>` recursively, and process them to json files with collection of posts without content.
+markdown-processor will search for markdowns in `<inDir>` recursively, and process them to json files, with collection of posts that doesn't contain contents.
 
 Markdown should have front-matter in yaml format. Available fields are:
 
@@ -19,7 +19,7 @@ Markdown should have front-matter in yaml format. Available fields are:
 - `subtitle` (String): Subtitle of this post.
 - `description` (String): Short description of this post. If not set, the first 100 characters from markdown post will be used.
 - `category` (String[]): Categories of this post.
-- `noPublish` (Boolean): If set to true, this post will not be processed.
+- `draft` (Boolean): If set to true, this post will not be processed.
 - `unlisted` (Boolean): If set to true, this post will not be included in posts list.
 
-`noPublish` and `unlisted` will be stripped in the processing.
+`draft` and `unlisted` will be stripped after processing.

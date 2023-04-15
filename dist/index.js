@@ -17,6 +17,7 @@ import shiki from 'shiki';
 import rehypeShiki from './rehype-shiki.js';
 import lodash from 'lodash';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
+import _minifyHtml from '@minify-html/node';
 let shikiHighlighter;
 const validate = TypeCompiler.Compile(FrontMatterYaml);
 program
@@ -53,7 +54,7 @@ function timer() {
 }
 async function newMarkdownProcessor(inDir, outDir, { posts: postsName }) {
     shikiHighlighter = await shiki.getHighlighter({
-        theme: 'material-palenight',
+        theme: 'css-variables',
     });
     const took = timer();
     const inDirFiles = await glob(path.join(inDir, '**/*.md'));
@@ -193,7 +194,7 @@ async function processMd(filePath) {
     const description = frontMatter.description ??
         `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
     return {
-        content: String(html),
+        content: minifyHtml(String(html)),
         name,
         metadata: {
             description,
@@ -325,4 +326,8 @@ function checkDuplicates(files) {
         }
     });
     return success ? undefined : fails;
+}
+function minifyHtml(html) {
+    const buf = _minifyHtml.minify(Buffer.from(html), { minify_css: true });
+    return buf.toString('utf-8');
 }

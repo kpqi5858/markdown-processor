@@ -23,6 +23,7 @@ import shiki, { Highlighter } from 'shiki';
 import rehypeShiki from './rehype-shiki.js';
 import lodash from 'lodash';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
+import _minifyHtml from '@minify-html/node';
 
 let shikiHighlighter: Highlighter;
 const validate = TypeCompiler.Compile(FrontMatterYaml);
@@ -75,7 +76,7 @@ async function newMarkdownProcessor(
   { posts: postsName }: { posts: string }
 ) {
   shikiHighlighter = await shiki.getHighlighter({
-    theme: 'material-palenight',
+    theme: 'css-variables',
   });
 
   const took = timer();
@@ -253,7 +254,7 @@ async function processMd(filePath: string): Promise<ContentType | null> {
     `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
 
   return {
-    content: String(html),
+    content: minifyHtml(String(html)),
     name,
     metadata: {
       description,
@@ -443,4 +444,9 @@ function checkDuplicates(files: string[]) {
   });
 
   return success ? undefined : fails;
+}
+
+function minifyHtml(html: string): string {
+  const buf = _minifyHtml.minify(Buffer.from(html), { minify_css: true });
+  return buf.toString('utf-8');
 }
