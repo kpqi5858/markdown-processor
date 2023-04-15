@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
-import { FrontMatterOptionalStrippedProperties, FrontMatterYaml, PostNameRegex } from './fm-type.js';
+import { FrontMatterOptionalStrippedProperties, FrontMatterYaml, PostNameRegex, } from './fm-type.js';
 import _glob from 'glob';
 import path from 'path';
 import { promisify } from 'util';
@@ -12,7 +12,6 @@ import remarkFrontmatter from 'remark-frontmatter';
 import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
 import { SKIP, visit } from 'unist-util-visit';
-import rehypePresetMinify from 'rehype-preset-minify';
 import rehypeSlug from 'rehype-slug';
 import chalk from 'chalk';
 import shiki from 'shiki';
@@ -24,44 +23,96 @@ const glob = promisify(_glob);
 const validate = TypeCompiler.Compile(FrontMatterYaml);
 program
     .option('--posts <name>', 'Specify the file name of posts collection.', 'posts')
-    .argument('<input-dir>').argument('<out-dir>').action(markdownProcessor);
+    .argument('<input-dir>')
+    .argument('<out-dir>')
+    .action(newMarkdownProcessor);
 program.parse();
-async function markdownProcessor(postsName, inDir, outDir) {
+function errBegin(msg, file) {
+    console.error(chalk.bold(chalk.red(msg), file && chalk.whiteBright(file)));
+}
+function errBody(msg) {
+    console.error(chalk.whiteBright(msg));
+}
+function errBody2(msg) {
+    console.error(chalk.bold(chalk.yellow(msg)));
+}
+function errBody3(msg) {
+    console.error(chalk.red(msg));
+}
+function timer() {
+    return new (class {
+        start;
+        constructor() {
+            this.start = process.hrtime.bigint();
+        }
+        timeMs() {
+            const micro = BigInt(1000);
+            const diff = (process.hrtime.bigint() - this.start) / micro;
+            const n = Number(diff);
+            return n / 1000;
+        }
+    })();
+}
+async function newMarkdownProcessor(inDir, outDir, { posts: postsName }) {
     shikiHighlighter = await shiki.getHighlighter({
-        theme: 'material-palenight'
+        theme: 'material-palenight',
     });
+    const took = timer();
     const inDirFiles = await glob(path.join(inDir, '**/*.md'));
+    const nameCheck = checkFilenamesRegex(inDirFiles);
+    if (nameCheck.length !== 0) {
+        errBegin('The following file names are not valid');
+        for (const err of nameCheck) {
+            errBody(' - ' + err);
+        }
+        return;
+    }
+    const dupCheck = checkDuplicates(inDirFiles);
+    if (dupCheck) {
+        errBegin('The following files have duplicated name');
+        for (const [name, paths] of Object.entries(dupCheck)) {
+            errBody2(name + ':');
+            errBody(paths.map((path) => ' - ' + path).join('\n'));
+        }
+        return;
+    }
+    // Except posts.json
+    const outDirFiles = (await glob(path.join(outDir, '*.json'))).filter((file) => {
+        return path.parse(file).name !== postsName;
+    });
+    const res = await diff(outDirFiles, inDirFiles);
+    for (const { processedFile: path } of res.case3) {
+        await fs.rm(path);
+    }
+    const needToProcess = [...res.case2, ...res.case4].map((file) => file.originalFile);
     const result = [];
-    const duplicateCheck = new Map();
-    let errored = false;
-    for (const mdFile of inDirFiles) {
-        const processed = await processMd(mdFile).catch((err) => {
-            console.error(chalk.red.bold('An error has found on'), chalk.bold(mdFile));
-            console.error(chalk.red('->', err));
-            errored = true;
+    const errors = [];
+    for (const md of needToProcess) {
+        const processed = await processMd(md).catch((err) => {
+            errors.push([md, err]);
         });
         if (!processed)
             continue;
-        const check = duplicateCheck.get(processed.name);
-        if (typeof check === 'undefined') {
-            duplicateCheck.set(processed.name, [mdFile]);
-        }
-        else {
-            check.push(mdFile);
-        }
         result.push(processed);
     }
-    duplicateCheck.forEach((value, key) => {
-        if (value.length !== 1) {
-            console.error(chalk.red.bold('Duplicate name found:'), chalk.bold(key));
-            value.forEach((file) => console.error(chalk.red(file)));
-            errored = true;
+    if (errors.length !== 0) {
+        for (const [file, error] of errors) {
+            errBegin('An error has found on', file);
+            errBody3(String(error));
         }
-    });
-    if (errored)
-        process.exit(1);
+        return;
+    }
+    console.log(chalk.cyan(`Processed ${result.length} markdowns in ${took.timeMs()}ms`));
+    await Promise.all(result.map(async (val) => {
+        await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
+    }));
+    const posts = generatePostsjson(result);
+    await Promise.all(res.case1.map(async ({ processedFile: file }) => {
+        const content = (await fs.readFile(file)).toString('utf-8');
+        posts.push(...generatePostsjson([JSON.parse(content)]));
+    }));
     // Sort posts with writtenDate in descending order
-    result.sort((a, b) => {
+    posts.sort((a, b) => {
         const dateA = new Date(a.metadata.writtenDate);
         const dateB = new Date(b.metadata.writtenDate);
         if (dateA < dateB)
@@ -70,24 +121,18 @@ async function markdownProcessor(postsName, inDir, outDir) {
             return -1;
         return 0;
     });
-    console.log(chalk.cyan(`Processed ${result.length} markdowns`));
-    await fs.rm(outDir, { recursive: true, force: true });
-    await fs.mkdir(outDir);
-    await Promise.all(result.map(async (val) => {
-        await fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
-    }));
-    await fs.writeFile(path.join(outDir, postsName + '.json'), JSON.stringify(generatePostsjson(result)));
+    await fs.writeFile(path.join(outDir, postsName + '.json'), JSON.stringify(posts));
 }
 /**
  * Extracts front matter from markdown.
  * @param markdown Markdown content.
  * @returns An object with two properties.
- * 'markdown' property is markdown with fromt matter extracted (removed),
- * And 'parsedFm' property is the parsed front matter.
+ * 'markdown' is markdown with fromt matter extracted (removed),
+ * And 'parsedFm' is the parsed front matter.
  * 'parsedFm' may be undefined if no front matter is detected.
  */
 async function extractFrontMatter(markdown) {
-    // TODO: Maybe we shouldn't parse the entire markdown?
+    // TODO: Maybe it shouldn't parse the entire markdown?
     // Just only parse the front matter part.
     let frontMatter;
     const processed = await remark()
@@ -112,13 +157,13 @@ async function extractFrontMatter(markdown) {
         /**
          * Parsed front matter. Can be undefined if no front matter is detected.
          */
-        frontMatter
+        frontMatter,
     };
 }
 /**
  * Hopefully better implementation than before..
  * @param filePath Markdown file to process
- * @return null if it is set to noPublish
+ * @return null if it is set to draft
  * @throws If there's problem with markdown file
  */
 async function processMd(filePath) {
@@ -135,13 +180,12 @@ async function processMd(filePath) {
         }
         throw new Error('Front-matter validation failure\n' + errors.join('\n'));
     }
-    if (frontMatter.noPublish)
+    if (frontMatter.draft)
         return null;
     const html = await remark()
         .use(remarkRehype)
         .use(rehypeSlug)
         .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
-        .use(rehypePresetMinify)
         .use(rehypeStringify)
         // It will create and process with its own VFile with immutable string.
         // If we pass VFile directly, it will modify that VFile, which we don't want.
@@ -155,9 +199,9 @@ async function processMd(filePath) {
         name,
         metadata: {
             description,
-            ...lodash.omit(frontMatter, FrontMatterOptionalStrippedProperties)
+            ...lodash.omit(frontMatter, FrontMatterOptionalStrippedProperties),
         },
-        unlisted: frontMatter.unlisted ? true : undefined
+        unlisted: frontMatter.unlisted ? true : undefined,
     };
 }
 /**
@@ -179,8 +223,6 @@ function generatePostsjson(result) {
         return prev;
     }, []);
 }
-;
-;
 /**
  * Computes difference from two list of files. Make sure there is no duplicates on both.
  * @returns DiffResult object.
@@ -190,21 +232,25 @@ async function diff(processeds, originals) {
         case1: [],
         case2: [],
         case3: [],
-        case4: []
+        case4: [],
     };
     const { case1, case2, case3, case4 } = result;
     const processedMap = new Map();
     for (const path of processeds) {
-        processedMap.set(getName(path), {
+        const name = getName(path);
+        processedMap.set(name, {
+            name,
             path,
-            mtime: (await fs.stat(path)).mtime
+            mtime: (await fs.stat(path)).mtime,
         });
     }
     const originalMap = new Map();
     for (const path of originals) {
-        originalMap.set(getName(path), {
+        const name = getName(path);
+        originalMap.set(name, {
+            name,
             path,
-            mtime: (await fs.stat(path)).mtime
+            mtime: (await fs.stat(path)).mtime,
         });
     }
     for (const [name, processedStat] of processedMap.entries()) {
@@ -212,8 +258,9 @@ async function diff(processeds, originals) {
         // Case 1 and 2
         if (originalStat) {
             const caseEntry = {
+                name,
                 originalFile: originalStat.path,
-                processedFile: processedStat.path
+                processedFile: processedStat.path,
             };
             if (processedStat.mtime > originalStat.mtime) {
                 case1.push(caseEntry);
@@ -228,13 +275,15 @@ async function diff(processeds, originals) {
     // Case 3
     for (const processedStat of processedMap.values()) {
         case3.push({
-            processedFile: processedStat.path
+            name: processedStat.name,
+            processedFile: processedStat.path,
         });
     }
     // Case 4
     for (const originalStat of originalMap.values()) {
         case4.push({
-            originalFile: originalStat.path
+            name: originalStat.name,
+            originalFile: originalStat.path,
         });
     }
     return result;
@@ -279,4 +328,3 @@ function checkDuplicates(files) {
     });
     return success ? undefined : fails;
 }
-export { markdownProcessor, processMd };

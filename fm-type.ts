@@ -28,7 +28,7 @@ const FrontMatterOptionalStripped = Type.Partial(Type.Object({
   /**
     * If set to true, it will not be processed.
     */
-  noPublish: Type.Boolean(),
+  draft: Type.Boolean(),
   /**
    * If set to true, it will not be included in posts list.
    */

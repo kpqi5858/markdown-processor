@@ -8,7 +8,7 @@ Used for my personal site. I don't really encourage you to use this for your pro
 
 - `<inDir>` Where your markdown files in.
 - `<outDir>` Where to put processed markdowns.
-- `--posts` File name of posts collection.
+- `--posts` File name of posts collection. Default is "posts"
 
 markdown-processor will search for markdowns in `<inDir>` recursively, and process them to json files with collection of posts without content.
 
