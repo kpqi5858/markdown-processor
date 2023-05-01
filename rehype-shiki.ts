@@ -53,7 +53,7 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
           addStyle(parent, codeTagStyle);
 
         // Replace the node with parsed children https://unifiedjs.com/learn/recipe/remove-node/
-        parent.children.splice(index as number, 1, ...codeChildren.children);
+        parent.children.splice(index!, 1, ...codeChildren.children);
         return [SKIP];
       } catch (e) {
         if (fatalOnError) {

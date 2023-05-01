@@ -88,22 +88,19 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName, force }) 
         ...(force ? res.case1 : []),
     ].map((file) => file.originalFile);
     const result = [];
-    const errors = [];
+    let errored = false;
     await asyncFor(needToProcess, async (md) => {
         const processed = await processMd(md).catch((err) => {
-            errors.push([md, err]);
+            errBegin('An error has found on', md);
+            errBody3(String(err));
+            errored = true;
         });
         if (!processed)
             return;
         result.push(processed);
     });
-    if (errors.length !== 0) {
-        for (const [file, error] of errors) {
-            errBegin('An error has found on', file);
-            errBody3(String(error));
-        }
+    if (errored)
         return;
-    }
     console.log(chalk.cyan(`Processed ${result.length} markdowns in ${took.timeMs()}ms`));
     await asyncFor(result, (val) => {
         return fs.writeFile(path.join(outDir, val.name + '.json'), JSON.stringify(val));
@@ -144,7 +141,6 @@ async function extractFrontMatter(markdown) {
             // It will never parse multiple front matters. Don't need to check multiples.
             frontMatter = parse(node.value);
             // Remove this node https://unifiedjs.com/learn/recipe/remove-node/
-            // @ts-expect-error It should be never null, unless we are dealing with root directly.
             parent.children.splice(index, 1);
             return [SKIP, index];
         });
