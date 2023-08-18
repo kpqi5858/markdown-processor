@@ -1,9 +1,9 @@
 import { Root, Element } from 'hast';
 import { unified, Plugin } from 'unified';
 import rehypeParse from 'rehype-parse';
-import { toText } from 'hast-util-to-text';
 import { SKIP, visit } from 'unist-util-visit';
 import { Highlighter} from 'shiki';
+import { toString } from 'hast-util-to-string';
 
 interface Options {
   /**
@@ -41,7 +41,7 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
         : undefined;
 
       try {
-        const highlightedHtml = highlighter.codeToHtml(toText(node, { whitespace: 'pre' }), { lang });
+        const highlightedHtml = highlighter.codeToHtml(toString(node), { lang });
         const parsed = hastParser.parse(highlightedHtml);
         const codeChildren = parsed.children[0];
         if (codeChildren.type !== 'element')

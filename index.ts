@@ -16,6 +16,7 @@ import strip from 'strip-markdown';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
+import remarkGfm from 'remark-gfm';
 import { SKIP, visit } from 'unist-util-visit';
 import rehypeSlug from 'rehype-slug';
 import chalk from 'chalk';
@@ -24,6 +25,9 @@ import rehypeShiki from './rehype-shiki.js';
 import lodash from 'lodash';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 import _minifyHtml from '@minify-html/node';
+
+const FOOTNOTE_LABEL = '각주';
+const FOOTNOTE_BACKLABEL = '돌아가기';
 
 let shikiHighlighter: Highlighter;
 const validate = TypeCompiler.Compile(FrontMatterYaml);
@@ -141,7 +145,7 @@ async function newMarkdownProcessor(
   });
 
   const posts = generatePostsjson(result);
-  await asyncFor(res.case1, async ({ processedFile: file }) => {
+  await asyncFor(force ? [] : res.case1, async ({ processedFile: file }) => {
     const content = (await fs.readFile(file)).toString('utf-8');
     posts.push(...generatePostsjson([JSON.parse(content)]));
   });
@@ -227,7 +231,8 @@ async function processMd(filePath: string): Promise<ContentType | null> {
   if (frontMatter.draft) return null;
 
   const html = await remark()
-    .use(remarkRehype)
+    .use(remarkGfm)
+    .use(remarkRehype, { footnoteLabel: FOOTNOTE_LABEL, footnoteBackLabel: FOOTNOTE_BACKLABEL })
     .use(rehypeSlug)
     .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
     .use(rehypeStringify)

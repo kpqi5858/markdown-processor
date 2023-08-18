@@ -1,7 +1,7 @@
 import { unified } from 'unified';
 import rehypeParse from 'rehype-parse';
-import { toText } from 'hast-util-to-text';
 import { SKIP, visit } from 'unist-util-visit';
+import { toString } from 'hast-util-to-string';
 const hastParser = unified().use(rehypeParse, { fragment: true });
 /**
  * Very hacky code highlighting with shiki.
@@ -22,7 +22,7 @@ const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
                 ? getLanguage(className)
                 : undefined;
             try {
-                const highlightedHtml = highlighter.codeToHtml(toText(node, { whitespace: 'pre' }), { lang });
+                const highlightedHtml = highlighter.codeToHtml(toString(node), { lang });
                 const parsed = hastParser.parse(highlightedHtml);
                 const codeChildren = parsed.children[0];
                 if (codeChildren.type !== 'element')
