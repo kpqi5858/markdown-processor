@@ -54,6 +54,12 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
 
         // Replace the node with parsed children https://unifiedjs.com/learn/recipe/remove-node/
         parent.children.splice(index!, 1, ...codeChildren.children);
+
+        // Add data-lang to parent tag.
+        const parentProp = parent.properties ?? {};
+        parentProp['data-lang'] = lang ?? '';
+        parent.properties = parentProp;
+
         return [SKIP];
       } catch (e) {
         if (fatalOnError) {
