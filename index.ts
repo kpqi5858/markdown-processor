@@ -232,10 +232,10 @@ async function processMd(filePath: string): Promise<ContentType | null> {
 
   const html = await remark()
     .use(remarkGfm)
-    .use(remarkRehype, { footnoteLabel: FOOTNOTE_LABEL, footnoteBackLabel: FOOTNOTE_BACKLABEL })
+    .use(remarkRehype, { footnoteLabel: FOOTNOTE_LABEL, footnoteBackLabel: FOOTNOTE_BACKLABEL, allowDangerousHtml: true })
     .use(rehypeSlug)
     .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
-    .use(rehypeStringify)
+    .use(rehypeStringify, { allowDangerousHtml: true })
     // It will create and process with its own VFile with immutable string.
     // If we pass VFile directly, it will modify that VFile, which we don't want.
     .process(markdown);
