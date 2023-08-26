@@ -16,6 +16,7 @@ import strip from 'strip-markdown';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
+import rehypeHyperlink from './rehype-hyperlink.js';
 import remarkGfm from 'remark-gfm';
 import { SKIP, visit } from 'unist-util-visit';
 import rehypeSlug from 'rehype-slug';
@@ -235,6 +236,7 @@ async function processMd(filePath: string): Promise<ContentType | null> {
     .use(remarkRehype, { footnoteLabel: FOOTNOTE_LABEL, footnoteBackLabel: FOOTNOTE_BACKLABEL, allowDangerousHtml: true })
     .use(rehypeSlug)
     .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
+    .use(rehypeHyperlink)
     .use(rehypeStringify, { allowDangerousHtml: true })
     // It will create and process with its own VFile with immutable string.
     // If we pass VFile directly, it will modify that VFile, which we don't want.
