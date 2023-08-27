@@ -13,7 +13,7 @@ const plugin: Plugin<[], Root> = () => {
           Object.assign(node.properties, {
             target: '_blank',
             rel: 'noreferrer noopener',
-            ['data-extlink']: null
+            ['data-extlink']: ''
           });
         }
       }

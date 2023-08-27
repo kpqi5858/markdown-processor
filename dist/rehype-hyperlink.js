@@ -11,7 +11,7 @@ const plugin = () => {
                     Object.assign(node.properties, {
                         target: '_blank',
                         rel: 'noreferrer noopener',
-                        ['data-extlink']: null
+                        ['data-extlink']: ''
                     });
                 }
             }
