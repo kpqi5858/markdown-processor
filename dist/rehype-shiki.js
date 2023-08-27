@@ -1,6 +1,7 @@
 import { unified } from 'unified';
 import rehypeParse from 'rehype-parse';
 import { SKIP, visit } from 'unist-util-visit';
+import { BUNDLED_LANGUAGES } from 'shiki';
 import { toString } from 'hast-util-to-string';
 const hastParser = unified().use(rehypeParse, { fragment: true });
 /**
@@ -35,7 +36,7 @@ const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
                 parent.children.splice(index, 1, ...codeChildren.children);
                 // Add data-lang to parent tag.
                 const parentProp = parent.properties ?? {};
-                parentProp['data-lang'] = lang ?? '';
+                parentProp['data-lang'] = lang ? getLanguageDisplayName(lang) : '';
                 parent.properties = parentProp;
                 return [SKIP];
             }
@@ -68,5 +69,8 @@ function addStyle(node, style) {
     const props = node.properties || {};
     props.style = props.style ? `${props.style};${style}` : style;
     node.properties = props;
+}
+function getLanguageDisplayName(lang) {
+    return BUNDLED_LANGUAGES.find((l) => l.id === lang || l.aliases?.includes(lang))?.displayName ?? lang;
 }
 export default rehypeShiki;

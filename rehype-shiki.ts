@@ -2,7 +2,7 @@ import { Root, Element } from 'hast';
 import { unified, Plugin } from 'unified';
 import rehypeParse from 'rehype-parse';
 import { SKIP, visit } from 'unist-util-visit';
-import { Highlighter} from 'shiki';
+import { Highlighter, BUNDLED_LANGUAGES } from 'shiki';
 import { toString } from 'hast-util-to-string';
 
 interface Options {
@@ -57,7 +57,7 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
 
         // Add data-lang to parent tag.
         const parentProp = parent.properties ?? {};
-        parentProp['data-lang'] = lang ?? '';
+        parentProp['data-lang'] = lang ? getLanguageDisplayName(lang) : '';
         parent.properties = parentProp;
 
         return [SKIP];
@@ -95,6 +95,10 @@ function addStyle(node: Element, style: string) {
 
   props.style = props.style ? `${props.style};${style}` : style;
   node.properties = props;
+}
+
+function getLanguageDisplayName(lang: string) {
+  return BUNDLED_LANGUAGES.find((l) => l.id === lang || l.aliases?.includes(lang) )?.displayName ?? lang
 }
 
 export default rehypeShiki;
