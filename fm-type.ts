@@ -41,7 +41,7 @@ type GeneratedMetadataType = {
   description: string
 };
 
-export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional, FrontMatterOptionalStripped], { additionalProperties: false });
+export const FrontMatterYaml = Type.Intersect([FrontMatterRequired, FrontMatterOptional, FrontMatterOptionalStripped], { unevaluatedProperties: false });
 export type FrontMatterYamlType = Static<typeof FrontMatterYaml>;
 
 type FrontMatterMetadataType = Omit<FrontMatterYamlType & GeneratedMetadataType, keyof Static<typeof FrontMatterOptionalStripped>>;
