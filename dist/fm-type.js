@@ -1,5 +1,6 @@
 import { Type } from '@sinclair/typebox';
 export const PostNameRegex = /^[a-zA-Z0-9_-]+$/;
+export const FromFileName = /\[([a-zA-Z0-9_-]+)\]/g;
 const FrontMatterRequired = Type.Object({
     title: Type.String(),
     /**
@@ -11,6 +12,7 @@ const FrontMatterRequired = Type.Object({
 });
 const FrontMatterOptional = Type.Partial(Type.Object({
     subtitle: Type.String(),
+    series: Type.String(),
     /**
     * If not set, it will grab from first sections of markdown content.
     */

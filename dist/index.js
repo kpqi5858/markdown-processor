@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
-import { FrontMatterOptionalStrippedProperties, FrontMatterYaml, PostNameRegex, } from './fm-type.js';
+import { FromFileName, FrontMatterOptionalStrippedProperties, FrontMatterYaml, PostNameRegex, } from './fm-type.js';
 import { glob } from 'glob';
 import path from 'path';
 import { remark } from 'remark';
@@ -44,18 +44,15 @@ function errBody3(msg) {
     console.error(chalk.red(msg));
 }
 function timer() {
-    return new (class {
-        start;
-        constructor() {
-            this.start = process.hrtime.bigint();
-        }
+    const start = process.hrtime.bigint();
+    return {
         timeMs() {
             const micro = BigInt(1000);
-            const diff = (process.hrtime.bigint() - this.start) / micro;
+            const diff = (process.hrtime.bigint() - start) / micro;
             const n = Number(diff);
             return n / 1000;
         }
-    })();
+    };
 }
 async function newMarkdownProcessor(inDir, outDir, { posts: postsName, force }) {
     shikiHighlighter = await shiki.getHighlighter({
@@ -214,7 +211,23 @@ async function processMd(filePath) {
  * @returns The name.
  */
 function getName(filePath) {
-    return path.parse(filePath).name;
+    const res = getNameOptional(filePath);
+    if (typeof res === 'undefined')
+        throw new Error('Invalid post name from path: ' + filePath);
+    return res;
+}
+function getNameOptional(filePath) {
+    const name = path.parse(filePath).name;
+    if (PostNameRegex.test(name))
+        return name;
+    const match = name.matchAll(FromFileName);
+    let result;
+    for (const mr of match) {
+        if (result)
+            return;
+        result = mr[1];
+    }
+    return result;
 }
 /**
  * Omits content from each ContentType.
@@ -299,7 +312,11 @@ async function diff(processeds, originals) {
  */
 function checkFilenamesRegex(files) {
     return files.reduce((fails, path) => {
-        if (!PostNameRegex.test(getName(path))) {
+        const name = getNameOptional(path);
+        if (typeof name === 'undefined') {
+            fails.push(path);
+        }
+        else if (!PostNameRegex.test(name)) {
             fails.push(path);
         }
         return fails;
