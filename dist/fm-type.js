@@ -1,6 +1,10 @@
 import { Type } from '@sinclair/typebox';
 export const PostNameRegex = /^[a-zA-Z0-9_-]+$/;
 export const FromFileName = /\[([a-zA-Z0-9_-]+)\]/g;
+export const Metadata = Type.Object({
+    series: Type.Record(Type.String(), Type.String()),
+    categories: Type.Record(Type.String(), Type.String())
+});
 const FrontMatterRequired = Type.Object({
     title: Type.String(),
     /**

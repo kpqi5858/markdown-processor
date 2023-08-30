@@ -2,7 +2,7 @@ import { parse } from 'yaml';
 import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
-import { FromFileName, FrontMatterOptionalStrippedProperties, FrontMatterYaml, PostNameRegex, } from './fm-type.js';
+import { FromFileName, FrontMatterOptionalStrippedProperties, FrontMatterYaml, Metadata, PostNameRegex, } from './fm-type.js';
 import { glob } from 'glob';
 import path from 'path';
 import { remark } from 'remark';
@@ -22,10 +22,13 @@ import { TypeCompiler } from '@sinclair/typebox/compiler';
 import _minifyHtml from '@minify-html/node';
 const FOOTNOTE_LABEL = '각주';
 const FOOTNOTE_BACKLABEL = '돌아가기';
+const METADATA_NAME = 'meta';
 let shikiHighlighter;
 const validate = TypeCompiler.Compile(FrontMatterYaml);
+const metaValidate = TypeCompiler.Compile(Metadata);
 program
     .option('--posts <name>', 'Specify the file name of posts collection.', 'posts')
+    .option('--metadata <path>', 'Metadata path.')
     .option('-f, --force', 'Process all markdowns freshly.')
     .argument('<input-dir>')
     .argument('<out-dir>')
@@ -54,13 +57,23 @@ function timer() {
         }
     };
 }
-async function newMarkdownProcessor(inDir, outDir, { posts: postsName, force }) {
+async function newMarkdownProcessor(inDir, outDir, { posts: postsName, metadata: metadataPath, force }) {
     shikiHighlighter = await shiki.getHighlighter({
         theme: 'css-variables',
     });
     const took = timer();
+    let metadata;
+    try {
+        if (metadataPath)
+            metadata = await loadMetadata(metadataPath);
+    }
+    catch (e) {
+        errBegin('Failed to read metadata info at ' + metadataPath);
+        errBody3(String(e));
+        return;
+    }
     const inDirFiles = await glob(path.join(inDir, '**/*.md'));
-    const nameCheck = checkFilenamesRegex(inDirFiles);
+    const nameCheck = checkFilenames(inDirFiles, [postsName, ...(metadata ? [METADATA_NAME] : [])]);
     if (nameCheck.length !== 0) {
         errBegin('The following file names are not valid');
         for (const err of nameCheck) {
@@ -91,7 +104,7 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName, force }) 
     const result = [];
     let errored = false;
     await asyncFor(needToProcess, async (md) => {
-        const processed = await processMd(md).catch((err) => {
+        const processed = await processMd(md, metadata).catch((err) => {
             errBegin('An error has found on', md);
             errBody3(String(err));
             errored = true;
@@ -122,6 +135,10 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName, force }) 
         return 0;
     });
     await fs.writeFile(path.join(outDir, postsName + '.json'), JSON.stringify(posts));
+    if (metadata)
+        await fs.writeFile(path.join(outDir, METADATA_NAME + '.json'), JSON.stringify(metadata));
+    else
+        await rmAll([path.join(outDir, METADATA_NAME + '.json')]);
 }
 /**
  * Extracts front matter from markdown.
@@ -165,7 +182,7 @@ async function extractFrontMatter(markdown) {
  * @return null if it is set to draft
  * @throws If there's problem with markdown file
  */
-async function processMd(filePath) {
+async function processMd(filePath, metadata) {
     const name = getName(filePath);
     const fileContent = (await fs.readFile(filePath)).toString('utf-8');
     const { markdown, frontMatter } = await extractFrontMatter(fileContent);
@@ -178,6 +195,17 @@ async function processMd(filePath) {
             errors.push(util.format(err));
         }
         throw new Error('Front-matter validation failure\n' + errors.join('\n'));
+    }
+    if (metadata) {
+        const errors = [];
+        if (frontMatter.series != null && metadata.series[frontMatter.series] == null)
+            errors.push(`Series '${frontMatter.series}' is not found in metadata`);
+        for (const ct of frontMatter.category ?? []) {
+            if (metadata.categories[ct] == null)
+                errors.push(`Category '${ct}' is not found in metadata`);
+        }
+        if (errors.length)
+            throw new Error(errors.join('\n'));
     }
     if (frontMatter.draft)
         return null;
@@ -239,6 +267,18 @@ function generatePostsjson(result) {
         prev.push(lodash.omit(cur, ['content']));
         return prev;
     }, []);
+}
+async function loadMetadata(path) {
+    const content = (await fs.readFile(path)).toString('utf-8');
+    const y = parse(content);
+    if (metaValidate.Check(y)) {
+        return y;
+    }
+    const errors = [];
+    for (const err of metaValidate.Errors(y)) {
+        errors.push(util.format(err));
+    }
+    throw new Error('Metadata validation failure\n' + errors.join('\n'));
 }
 /**
  * Computes difference from two list of files. Make sure there is no duplicates on both.
@@ -310,10 +350,13 @@ async function diff(processeds, originals) {
  * @param files File paths to check.
  * @returns Array of failed file paths. Empty if there was none.
  */
-function checkFilenamesRegex(files) {
+function checkFilenames(files, bannedName = []) {
     return files.reduce((fails, path) => {
         const name = getNameOptional(path);
         if (typeof name === 'undefined') {
+            fails.push(path);
+        }
+        else if (bannedName.includes(name)) {
             fails.push(path);
         }
         else if (!PostNameRegex.test(name)) {
@@ -354,7 +397,7 @@ function minifyHtml(html) {
     return buf.toString('utf-8');
 }
 async function rmAll(paths) {
-    return asyncFor(paths, (path) => fs.rm(path));
+    return asyncFor(paths, (path) => fs.rm(path, { force: true }));
 }
 async function asyncFor(arr, f) {
     return await Promise.all(arr.map(f));

@@ -7,6 +7,8 @@ import {
   FromFileName,
   FrontMatterOptionalStrippedProperties,
   FrontMatterYaml,
+  Metadata,
+  MetadataType,
   PostNameRegex,
   PostsListType,
 } from './fm-type.js';
@@ -30,15 +32,21 @@ import _minifyHtml from '@minify-html/node';
 
 const FOOTNOTE_LABEL = '각주';
 const FOOTNOTE_BACKLABEL = '돌아가기';
+const METADATA_NAME = 'meta';
 
 let shikiHighlighter: Highlighter;
 const validate = TypeCompiler.Compile(FrontMatterYaml);
+const metaValidate = TypeCompiler.Compile(Metadata);
 
 program
   .option(
     '--posts <name>',
     'Specify the file name of posts collection.',
     'posts'
+  )
+  .option(
+    '--metadata <path>',
+    'Metadata path.',
   )
   .option('-f, --force', 'Process all markdowns freshly.')
   .argument('<input-dir>')
@@ -77,7 +85,7 @@ function timer() {
 async function newMarkdownProcessor(
   inDir: string,
   outDir: string,
-  { posts: postsName, force }: { posts: string; force: boolean }
+  { posts: postsName, metadata: metadataPath, force }: { posts: string; metadata: string | undefined; force: boolean }
 ) {
   shikiHighlighter = await shiki.getHighlighter({
     theme: 'css-variables',
@@ -85,9 +93,19 @@ async function newMarkdownProcessor(
 
   const took = timer();
 
+  let metadata: MetadataType | undefined;
+  try {
+    if (metadataPath)
+      metadata = await loadMetadata(metadataPath)
+  } catch (e: unknown) {
+    errBegin('Failed to read metadata info at ' + metadataPath);
+    errBody3(String(e));
+    return;
+  }
+
   const inDirFiles = await glob(path.join(inDir, '**/*.md'));
 
-  const nameCheck = checkFilenamesRegex(inDirFiles);
+  const nameCheck = checkFilenames(inDirFiles, [postsName, ...(metadata ? [METADATA_NAME] : [])]);
   if (nameCheck.length !== 0) {
     errBegin('The following file names are not valid');
     for (const err of nameCheck) {
@@ -121,7 +139,7 @@ async function newMarkdownProcessor(
   const result: ContentType[] = [];
   let errored = false;
   await asyncFor(needToProcess, async (md) => {
-    const processed = await processMd(md).catch((err) => {
+    const processed = await processMd(md, metadata).catch((err) => {
       errBegin('An error has found on', md);
       errBody3(String(err));
       errored = true;
@@ -162,6 +180,14 @@ async function newMarkdownProcessor(
     path.join(outDir, postsName + '.json'),
     JSON.stringify(posts)
   );
+
+  if (metadata)
+    await fs.writeFile(
+      path.join(outDir, METADATA_NAME + '.json'),
+      JSON.stringify(metadata)
+    );
+  else
+    await rmAll([path.join(outDir, METADATA_NAME + '.json')]);
 }
 
 /**
@@ -211,7 +237,7 @@ async function extractFrontMatter(markdown: string) {
  * @return null if it is set to draft
  * @throws If there's problem with markdown file
  */
-async function processMd(filePath: string): Promise<ContentType | null> {
+async function processMd(filePath: string, metadata?: MetadataType): Promise<ContentType | null> {
   const name = getName(filePath);
   const fileContent = (await fs.readFile(filePath)).toString('utf-8');
 
@@ -227,6 +253,16 @@ async function processMd(filePath: string): Promise<ContentType | null> {
     throw new Error('Front-matter validation failure\n' + errors.join('\n'));
   }
 
+  if (metadata) {
+    const errors = [];
+    if (frontMatter.series != null && metadata.series[frontMatter.series] == null)
+      errors.push(`Series '${frontMatter.series}' is not found in metadata`);
+    for (const ct of frontMatter.category ?? []) {
+      if (metadata.categories[ct] == null)
+      errors.push(`Category '${ct}' is not found in metadata`);
+    }
+    if (errors.length) throw new Error(errors.join('\n'));
+  }
   if (frontMatter.draft) return null;
 
   const html = await remark()
@@ -293,6 +329,20 @@ function generatePostsjson(result: ContentType[]) {
     prev.push(lodash.omit(cur, ['content']));
     return prev;
   }, [] as PostsListType);
+}
+
+
+async function loadMetadata(path: string) {
+  const content = (await fs.readFile(path)).toString('utf-8');
+  const y = parse(content);
+  if (metaValidate.Check(y)) {
+    return y;
+  }
+  const errors: string[] = [];
+  for (const err of metaValidate.Errors(y)) {
+    errors.push(util.format(err));
+  }
+  throw new Error('Metadata validation failure\n' + errors.join('\n'));
 }
 
 interface DiffEntry {
@@ -418,11 +468,13 @@ async function diff(
  * @param files File paths to check.
  * @returns Array of failed file paths. Empty if there was none.
  */
-function checkFilenamesRegex(files: string[]) {
+function checkFilenames(files: string[], bannedName: string[] = []) {
   return files.reduce((fails, path) => {
     const name = getNameOptional(path);
     if (typeof name === 'undefined') {
       fails.push(path);
+    } else if (bannedName.includes(name)) {
+      fails.push(path)
     } else if (!PostNameRegex.test(name)) {
       fails.push(path);
     }
@@ -466,7 +518,7 @@ function minifyHtml(html: string): string {
 }
 
 async function rmAll(paths: string[]) {
-  return asyncFor(paths, (path) => fs.rm(path));
+  return asyncFor(paths, (path) => fs.rm(path, { force: true }));
 }
 
 async function asyncFor<T, R>(arr: T[], f: (_: T) => Promise<R>): Promise<R[]> {
