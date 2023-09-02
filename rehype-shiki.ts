@@ -56,9 +56,11 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
         parent.children.splice(index!, 1, ...codeChildren.children);
 
         // Add data-lang to parent tag.
-        const parentProp = parent.properties ?? {};
-        parentProp['data-lang'] = lang ? getLanguageDisplayName(lang) : '';
-        parent.properties = parentProp;
+        if (lang) {
+          const parentProp = parent.properties ?? {};
+          parentProp['data-lang'] = getLanguageDisplayName(lang);
+          parent.properties = parentProp;
+        }
 
         return [SKIP];
       } catch (e) {
