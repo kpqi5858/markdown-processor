@@ -24,7 +24,10 @@ const hastParser = unified().use(rehypeParse, { fragment: true });
  *
  * Yes, there's already rehype-shiki but I decided to rewrite with their sources.
  */
-const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = false}) => {
+const rehypeShiki: Plugin<[Options], Root> = ({
+  highlighter,
+  fatalOnError = false,
+}) => {
   return (tree, vfile) => {
     visit(tree, 'element', (node, index, parent) => {
       // We are only selecting 'code' tag where parent is 'pre'
@@ -41,7 +44,9 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
         : undefined;
 
       try {
-        const highlightedHtml = highlighter.codeToHtml(toString(node), { lang });
+        const highlightedHtml = highlighter.codeToHtml(toString(node), {
+          lang,
+        });
         const parsed = hastParser.parse(highlightedHtml);
         const codeChildren = parsed.children[0];
         if (codeChildren.type !== 'element')
@@ -49,8 +54,7 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
 
         // Try to merge style on 'pre' tag.
         const codeTagStyle = codeChildren.properties?.style;
-        if (typeof codeTagStyle === 'string')
-          addStyle(parent, codeTagStyle);
+        if (typeof codeTagStyle === 'string') addStyle(parent, codeTagStyle);
 
         // Replace the node with parsed children https://unifiedjs.com/learn/recipe/remove-node/
         parent.children.splice(index!, 1, ...codeChildren.children);
@@ -68,7 +72,9 @@ const rehypeShiki: Plugin<[Options], Root> = ({ highlighter, fatalOnError = fals
           vfile.fail(e as Error);
           return;
         }
-        vfile.message('Warning: Error occured while trying to highlight the code block.')
+        vfile.message(
+          'Warning: Error occured while trying to highlight the code block.',
+        );
         vfile.message(e as Error);
       }
     });
@@ -100,7 +106,10 @@ function addStyle(node: Element, style: string) {
 }
 
 function getLanguageDisplayName(lang: string) {
-  return BUNDLED_LANGUAGES.find((l) => l.id === lang || l.aliases?.includes(lang) )?.displayName ?? lang
+  return (
+    BUNDLED_LANGUAGES.find((l) => l.id === lang || l.aliases?.includes(lang))
+      ?.displayName ?? lang
+  );
 }
 
 export default rehypeShiki;

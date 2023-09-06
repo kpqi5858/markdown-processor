@@ -2,16 +2,18 @@ import { parse } from 'yaml';
 import fs from 'fs/promises';
 import util from 'util';
 import { program } from 'commander';
-import { FromFileName, FrontMatterOptionalStrippedProperties, FrontMatterYaml, Metadata, PostNameRegex, } from './fm-type.js';
+import { FrontMatterOptionalStrippedProperties, FrontMatterYaml, Metadata, } from './fm-type.js';
+import { asyncFor, checkDuplicates, checkFilenames, diff, getName, minifyHtml, rmAll, generatePostsjson, stripMarkdown, } from './utils.js';
 import { glob } from 'glob';
 import path from 'path';
 import { remark } from 'remark';
-import strip from 'strip-markdown';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkRehype from 'remark-rehype';
 import rehypeStringify from 'rehype-stringify';
+import rehypeKatex from 'rehype-katex';
 import rehypeHyperlink from './rehype-hyperlink.js';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import { SKIP, visit } from 'unist-util-visit';
 import rehypeSlug from 'rehype-slug';
 import chalk from 'chalk';
@@ -19,7 +21,6 @@ import shiki from 'shiki';
 import rehypeShiki from './rehype-shiki.js';
 import lodash from 'lodash';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
-import _minifyHtml from '@minify-html/node';
 const FOOTNOTE_LABEL = '각주';
 const FOOTNOTE_BACKLABEL = '돌아가기';
 const METADATA_NAME = 'meta';
@@ -32,7 +33,7 @@ program
     .option('-f, --force', 'Process all markdowns freshly.')
     .argument('<input-dir>')
     .argument('<out-dir>')
-    .action(newMarkdownProcessor);
+    .action(markdownProcessor);
 program.parse();
 function errBegin(msg, file) {
     console.error(chalk.bold(chalk.red(msg), file && chalk.whiteBright(file)));
@@ -50,14 +51,14 @@ function timer() {
     const start = process.hrtime.bigint();
     return {
         timeMs() {
-            const micro = BigInt(1000);
+            const micro = 1000n;
             const diff = (process.hrtime.bigint() - start) / micro;
             const n = Number(diff);
             return n / 1000;
-        }
+        },
     };
 }
-async function newMarkdownProcessor(inDir, outDir, { posts: postsName, metadata: metadataPath, force }) {
+async function markdownProcessor(inDir, outDir, { posts: postsName, metadata: metadataPath, force, }) {
     shikiHighlighter = await shiki.getHighlighter({
         theme: 'css-variables',
     });
@@ -73,7 +74,10 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName, metadata:
         return;
     }
     const inDirFiles = await glob(path.join(inDir, '**/*.md'));
-    const nameCheck = checkFilenames(inDirFiles, [postsName, ...(metadata ? [METADATA_NAME] : [])]);
+    const nameCheck = checkFilenames(inDirFiles, [
+        postsName,
+        ...(metadata ? [METADATA_NAME, postsName] : []),
+    ]);
     if (nameCheck.length !== 0) {
         errBegin('The following file names are not valid');
         for (const err of nameCheck) {
@@ -90,6 +94,7 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName, metadata:
         }
         return;
     }
+    const postNames = new Set(inDirFiles.map(getName));
     // Except posts.json
     const outDirFiles = (await glob(path.join(outDir, '*.json'))).filter((file) => {
         return path.parse(file).name !== postsName;
@@ -104,7 +109,7 @@ async function newMarkdownProcessor(inDir, outDir, { posts: postsName, metadata:
     const result = [];
     let errored = false;
     await asyncFor(needToProcess, async (md) => {
-        const processed = await processMd(md, metadata).catch((err) => {
+        const processed = await processMd(md, (l) => postNames.has(l), metadata).catch((err) => {
             errBegin('An error has found on', md);
             errBody3(String(err));
             errored = true;
@@ -152,7 +157,7 @@ async function extractFrontMatter(markdown) {
     // TODO: Maybe it shouldn't parse the entire markdown?
     // Just only parse the front matter part.
     let frontMatter;
-    const processed = await remark()
+    const processed = remark()
         .use(remarkFrontmatter, ['yaml'])
         .use(() => (tree, vfile, next) => {
         visit(tree, 'yaml', (node, index, parent) => {
@@ -164,7 +169,7 @@ async function extractFrontMatter(markdown) {
         });
         next();
     })
-        .process(markdown);
+        .processSync(markdown);
     return {
         /**
          * Markdown without front matter
@@ -182,7 +187,7 @@ async function extractFrontMatter(markdown) {
  * @return null if it is set to draft
  * @throws If there's problem with markdown file
  */
-async function processMd(filePath, metadata) {
+async function processMd(filePath, isValidLocalLink, metadata) {
     const name = getName(filePath);
     const fileContent = (await fs.readFile(filePath)).toString('utf-8');
     const { markdown, frontMatter } = await extractFrontMatter(fileContent);
@@ -198,7 +203,8 @@ async function processMd(filePath, metadata) {
     }
     if (metadata) {
         const errors = [];
-        if (frontMatter.series != null && metadata.series[frontMatter.series] == null)
+        if (frontMatter.series != null &&
+            metadata.series[frontMatter.series] == null)
             errors.push(`Series '${frontMatter.series}' is not found in metadata`);
         for (const ct of frontMatter.category ?? []) {
             if (metadata.categories[ct] == null)
@@ -211,16 +217,22 @@ async function processMd(filePath, metadata) {
         return null;
     const html = await remark()
         .use(remarkGfm)
-        .use(remarkRehype, { footnoteLabel: FOOTNOTE_LABEL, footnoteBackLabel: FOOTNOTE_BACKLABEL, allowDangerousHtml: true })
+        .use(remarkRehype, {
+        footnoteLabel: FOOTNOTE_LABEL,
+        footnoteBackLabel: FOOTNOTE_BACKLABEL,
+        allowDangerousHtml: true,
+    })
         .use(rehypeSlug)
+        .use(remarkMath)
         .use(rehypeShiki, { highlighter: shikiHighlighter, fatalOnError: true })
-        .use(rehypeHyperlink)
+        .use(rehypeKatex)
+        .use(rehypeHyperlink, { isValidLocalLink })
         .use(rehypeStringify, { allowDangerousHtml: true })
         // It will create and process with its own VFile with immutable string.
         // If we pass VFile directly, it will modify that VFile, which we don't want.
         .process(markdown);
     frontMatter.writtenDate = new Date(frontMatter.writtenDate).toISOString();
-    const stripped = String(await remark().use(strip).process(markdown)).replace(/\n+/g, ' ');
+    const stripped = stripMarkdown(markdown);
     const description = frontMatter.description ??
         `${stripped.slice(0, 100).trim()}${stripped.length > 100 ? '...' : ''}`;
     return {
@@ -232,41 +244,6 @@ async function processMd(filePath, metadata) {
         },
         unlisted: frontMatter.unlisted ? true : undefined,
     };
-}
-/**
- * Get name of this markdown (based on file name)
- * @param filePath Path to markdown file.
- * @returns The name.
- */
-function getName(filePath) {
-    const res = getNameOptional(filePath);
-    if (typeof res === 'undefined')
-        throw new Error('Invalid post name from path: ' + filePath);
-    return res;
-}
-function getNameOptional(filePath) {
-    const name = path.parse(filePath).name;
-    if (PostNameRegex.test(name))
-        return name;
-    const match = name.matchAll(FromFileName);
-    let result;
-    for (const mr of match) {
-        if (result)
-            return;
-        result = mr[1];
-    }
-    return result;
-}
-/**
- * Omits content from each ContentType.
- */
-function generatePostsjson(result) {
-    return result.reduce((prev, cur) => {
-        if (cur.unlisted)
-            return prev;
-        prev.push(lodash.omit(cur, ['content']));
-        return prev;
-    }, []);
 }
 async function loadMetadata(path) {
     const content = (await fs.readFile(path)).toString('utf-8');
@@ -280,125 +257,4 @@ async function loadMetadata(path) {
     }
     throw new Error('Metadata validation failure\n' + errors.join('\n'));
 }
-/**
- * Computes difference from two list of files. Make sure there is no duplicates on both.
- * @returns DiffResult object.
- */
-async function diff(processeds, originals) {
-    const result = {
-        case1: [],
-        case2: [],
-        case3: [],
-        case4: [],
-    };
-    const { case1, case2, case3, case4 } = result;
-    const processedMap = new Map();
-    await asyncFor(processeds, async (path) => {
-        const name = getName(path);
-        processedMap.set(name, {
-            name,
-            path,
-            mtime: (await fs.stat(path)).mtime,
-        });
-    });
-    const originalMap = new Map();
-    await asyncFor(originals, async (path) => {
-        const name = getName(path);
-        originalMap.set(name, {
-            name,
-            path,
-            mtime: (await fs.stat(path)).mtime,
-        });
-    });
-    for (const [name, processedStat] of processedMap.entries()) {
-        const originalStat = originalMap.get(name);
-        // Case 1 and 2
-        if (originalStat) {
-            const caseEntry = {
-                name,
-                originalFile: originalStat.path,
-                processedFile: processedStat.path,
-            };
-            if (processedStat.mtime > originalStat.mtime) {
-                case1.push(caseEntry);
-            }
-            else {
-                case2.push(caseEntry);
-            }
-            processedMap.delete(name);
-            originalMap.delete(name);
-        }
-    }
-    // Case 3
-    for (const processedStat of processedMap.values()) {
-        case3.push({
-            name: processedStat.name,
-            processedFile: processedStat.path,
-        });
-    }
-    // Case 4
-    for (const originalStat of originalMap.values()) {
-        case4.push({
-            name: originalStat.name,
-            originalFile: originalStat.path,
-        });
-    }
-    return result;
-}
-/**
- * Checks for file names that doesn't match PostNameRegex.
- * @param files File paths to check.
- * @returns Array of failed file paths. Empty if there was none.
- */
-function checkFilenames(files, bannedName = []) {
-    return files.reduce((fails, path) => {
-        const name = getNameOptional(path);
-        if (typeof name === 'undefined') {
-            fails.push(path);
-        }
-        else if (bannedName.includes(name)) {
-            fails.push(path);
-        }
-        else if (!PostNameRegex.test(name)) {
-            fails.push(path);
-        }
-        return fails;
-    }, []);
-}
-/**
- * Checks for duplicated file names.
- * @param files File paths to check.
- * @returns If there's duplicates, returns key-value pair of duplicated name and corresponding file paths.
- */
-function checkDuplicates(files) {
-    const duplicateCheck = new Map();
-    files.forEach((path) => {
-        const name = getName(path);
-        const check = duplicateCheck.get(name);
-        if (typeof check === 'undefined') {
-            duplicateCheck.set(name, [path]);
-        }
-        else {
-            check.push(path);
-        }
-    });
-    let success = true;
-    const fails = {};
-    duplicateCheck.forEach((value, key) => {
-        if (value.length !== 1) {
-            success = false;
-            fails[key] = value;
-        }
-    });
-    return success ? undefined : fails;
-}
-function minifyHtml(html) {
-    const buf = _minifyHtml.minify(Buffer.from(html), { minify_css: true });
-    return buf.toString('utf-8');
-}
-async function rmAll(paths) {
-    return asyncFor(paths, (path) => fs.rm(path, { force: true }));
-}
-async function asyncFor(arr, f) {
-    return await Promise.all(arr.map(f));
-}
+export default markdownProcessor;

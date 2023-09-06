@@ -10,7 +10,7 @@ const hastParser = unified().use(rehypeParse, { fragment: true });
  *
  * Yes, there's already rehype-shiki but I decided to rewrite with their sources.
  */
-const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
+const rehypeShiki = ({ highlighter, fatalOnError = false, }) => {
     return (tree, vfile) => {
         visit(tree, 'element', (node, index, parent) => {
             // We are only selecting 'code' tag where parent is 'pre'
@@ -23,7 +23,9 @@ const rehypeShiki = ({ highlighter, fatalOnError = false }) => {
                 ? getLanguage(className)
                 : undefined;
             try {
-                const highlightedHtml = highlighter.codeToHtml(toString(node), { lang });
+                const highlightedHtml = highlighter.codeToHtml(toString(node), {
+                    lang,
+                });
                 const parsed = hastParser.parse(highlightedHtml);
                 const codeChildren = parsed.children[0];
                 if (codeChildren.type !== 'element')
@@ -73,6 +75,7 @@ function addStyle(node, style) {
     node.properties = props;
 }
 function getLanguageDisplayName(lang) {
-    return BUNDLED_LANGUAGES.find((l) => l.id === lang || l.aliases?.includes(lang))?.displayName ?? lang;
+    return (BUNDLED_LANGUAGES.find((l) => l.id === lang || l.aliases?.includes(lang))
+        ?.displayName ?? lang);
 }
 export default rehypeShiki;
