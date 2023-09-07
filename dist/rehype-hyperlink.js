@@ -9,11 +9,17 @@ function localLinkTransform(href, l) {
     catch { }
     // If it's not, then assume it's local path
     href = decodeURI(href);
+    const hash = href.indexOf('#');
+    let hashPart = '';
+    if (hash >= 0) {
+        hashPart = href.slice(hash);
+        href = href.slice(0, hash);
+    }
     const name = getName(href);
     if (!l(name)) {
         throw new Error(`'${href}' is expected to be a valid local path`);
     }
-    return './' + name;
+    return './' + name + hashPart;
 }
 const plugin = ({ isValidLocalLink }) => {
     return (tree) => {
